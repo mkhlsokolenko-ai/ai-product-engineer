@@ -1,7 +1,10 @@
-# Курсовой контур на server-1 (sLAVA-пилот, 201.51.5.24).
-# Qdrant / RouteAI-доступ / (опц.) sLAVA-reranker уже живут на хосте — MCP ходит
-# к ним по 127.0.0.1, поэтому network_mode: host. Postgres поднимаем здесь же.
-# Наружу торчит только Caddy (443, TLS). MCP слушает 127.0.0.1:8787.
+# Курсовой edge-контур на server-1 (201.51.5.24).
+# Слой auth+edge (Postgres + Keycloak + Caddy) поднимается первым.
+# MCP-сервис — под профилем "mcp" (включается позже; ему нужен доступ к сервисам
+# sLAVA на 127.0.0.1 хоста, это решается на шаге подключения MCP).
+#
+#   docker compose up -d postgres keycloak caddy        # auth-слой (сейчас)
+#   docker compose --profile mcp up -d                  # + MCP (позже)
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,28 +15,54 @@ services:
       POSTGRES_DB: ape
     volumes:
       - ape_pg:/var/lib/postgresql/data
+      - ./db/init-keycloak.sql:/docker-entrypoint-initdb.d/10-keycloak.sql:ro
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"     # 5433 наружу-локально, чтобы не пересечься с pg sLAVA
 
-  mcp:
-    build: .
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
-    network_mode: host          # чтобы видеть Qdrant/sLAVA/Postgres на 127.0.0.1
-    env_file: .env
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ape
+      KC_DB_PASSWORD: ${PG_PASSWORD:-changeme}
+      KC_HOSTNAME: https://auth.engineer-ai.pro
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
     depends_on:
       - postgres
-    command: ["ape-mcp"]
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    network_mode: host          # 443 наружу, проксирует на 127.0.0.1:8787
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - mcp
+      - keycloak
+
+  mcp:
+    build: .
+    restart: unless-stopped
+    profiles: ["mcp"]
+    env_file: .env
+    depends_on:
+      - postgres
+    command: ["ape-mcp"]
+    # NB: MCP ходит к Qdrant/RouteAI/vLLM sLAVA на 127.0.0.1 хоста.
+    # На шаге подключения MCP решаем сетевой доступ (network_mode host
+    # или перепривязка сервисов sLAVA). См. docs/DEPLOY.md.
 
 volumes:
   ape_pg:

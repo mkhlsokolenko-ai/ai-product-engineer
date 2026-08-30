@@ -1,5 +1,10 @@
-# TLS-фронт для курсового MCP. Замени домен на свой (A-запись -> 201.51.5.24).
-# Caddy сам выпустит и продлит Let's Encrypt.
-mcp.example.ru {
-    reverse_proxy 127.0.0.1:8787
+# TLS-фронт (Let's Encrypt автоматически). A-записи -> 201.51.5.24.
+
+auth.engineer-ai.pro {
+    reverse_proxy keycloak:8080
 }
+
+# Включается вместе с профилем mcp (docker compose --profile mcp up -d):
+# mcp.engineer-ai.pro {
+#     reverse_proxy mcp:8787
+# }
