@@ -104,16 +104,31 @@ MinIO рядом с Qdrant/Postgres проще и дешевле.
 
 **Готовые компоненты под наши экраны:**
 - `GradeBadge` → оценки/успеваемость; `ProgressBar` + `ScanStage` → прогресс курса/этапы;
-- `AuthBilling` → экран входа/биллинга (ложится на Keycloak + учёт токенов);
 - `Card`/`Button`/`Input`/`Chip`/`Tag`/`ConfidenceBadge` → базовый UI-кит;
 - ui_kits/app: `App`, `Landing`, `Results`, `ScanProgress`, `FindingDetail` — каркас SPA.
+
+**Авторизация — берём из redteam-ai, НЕ из pmhucks (там Supabase).**
+`redteam-ai/_design_v4/ui_kits/app/AuthBilling.jsx`:
+- `window.Auth` — «богатый вход»: карточка с кнопкой **«Продолжить с GitHub»** (GitHub-first)
+  + magic-link на email, на DS-токенах. Не завязан на Supabase.
+- Подключаем к **Keycloak**: кнопка GitHub → authorization endpoint нашего realm с
+  `kc_idp_hint=github` (брокер GitHub уже предусмотрен в realm). Никакого своего
+  бэка авторизации — токены выдаёт Keycloak.
+- `window.Billing` — баланс/пополнение/история списаний → переиспользуем под
+  **баланс токенов студента** (данные из `cost_journal` вместо оплаты).
+
+Из **pmhucks** берём только **вёрстку** админки/кабинета (`admin.html` KPI-грид с
+готовыми карточками «AI запросы / токены / стоимость $», `cabinet.html` табы), а
+Supabase-слой (`src/lib/auth.js`) выкидываем — авторизация через Keycloak.
 
 Практические слайды Лекции 1 уже сделаны в этих токенах (`Лекция_1_Вводная_portal.pptx`) —
 служат превью портального стиля.
 
 ## Порядок сборки
 
-1. DNS: `A mcp`/`A auth` → 201.51.5.24; поднять **Keycloak realm** на server-1 (общий блокер).
+1. ✅ **Keycloak realm поднят** на server-1 (auth.engineer-ai.pro, realm `ai-product-engineer`
+   импортирован, TLS выпущен, клиенты portal+course-mcp, роли student/lecturer). Осталось:
+   создать GitHub OAuth App и добавить IdP (`keycloak/README.md`).
 2. **MinIO** на server-1 + бакеты (600 МБ/студента) + ingest-хук.
 3. **Portal API** (FastAPI): чтение cost_journal, таблицы grades/projects/milestones.
 4. **Next.js фронт** на портальный бокс (95.163.244.138): DS red-team + Keycloak SSO.
