@@ -21,10 +21,18 @@ docker compose logs -f keycloak   # дождись "Imported realm ai-product-en
 ## GitHub-вход (Identity Provider)
 1. GitHub → Settings → Developer settings → **OAuth Apps** → New:
    - Homepage: `https://engineer-ai.pro`
-   - Authorization callback URL:
+   - Authorization callback URL (совпасть 1-в-1!):
      `https://auth.engineer-ai.pro/realms/ai-product-engineer/broker/github/endpoint`
-2. Получишь Client ID / Client Secret → положи в `.env` (`KC_GITHUB_*`).
-3. Добавь IdP через kcadm (creds не хранятся в git):
+2. Register → скопируй **Client ID**, Generate secret → скопируй **Client Secret**.
+
+**Вариант A — через admin-консоль (удобно вживую на лекции):**
+1. `https://auth.engineer-ai.pro/admin/` → войди `admin` → сверху выбери realm `ai-product-engineer`.
+2. **Identity providers** → **Add provider** → **GitHub**.
+3. Вставь **Client ID** / **Client Secret** → **Add**. Готово (роль `student` — по умолчанию).
+4. Проверка: `.../realms/ai-product-engineer/account/` → Sign in → кнопка **GitHub**.
+
+**Вариант B — через kcadm (creds не хранятся в git):**
+3. Положи creds в `.env` (`KC_GITHUB_*`) и выполни:
 ```bash
 docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 --realm master \
