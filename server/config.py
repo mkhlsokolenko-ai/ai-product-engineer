@@ -22,6 +22,13 @@ class Settings:
     # Keycloak
     kc_issuer: str = os.getenv("KEYCLOAK_ISSUER", "")
     kc_jwks_uri: str = os.getenv("KEYCLOAK_JWKS_URI", "")
+    # JWKS тянем по ВНУТРЕННЕЙ сети (keycloak:8080), а не по публичному домену:
+    # контейнер не может достучаться до собственного публичного IP хоста (hairpin).
+    # issuer при этом проверяется по публичному kc_issuer.
+    kc_jwks_internal: str = os.getenv(
+        "KEYCLOAK_JWKS_INTERNAL",
+        "http://keycloak:8080/realms/ai-product-engineer/protocol/openid-connect/certs",
+    )
     kc_audience: str = os.getenv("KEYCLOAK_AUDIENCE", "course-mcp")
 
     # RouteAI

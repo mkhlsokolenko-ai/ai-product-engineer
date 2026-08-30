@@ -44,7 +44,8 @@ def _mc(public: bool) -> Minio:
     return Minio(ep, access_key=settings.minio_user, secret_key=settings.minio_password, secure=public)
 
 app = FastAPI(title="AI Product Engineer — Portal API", version="0.1.0")
-_jwks = PyJWKClient(settings.kc_jwks_uri)
+# JWKS по внутренней сети (keycloak:8080) — публичный домён из контейнера не доступен.
+_jwks = PyJWKClient(settings.kc_jwks_internal)
 
 
 def verify(authorization: str = Header(default="")) -> dict:

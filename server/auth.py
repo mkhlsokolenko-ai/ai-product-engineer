@@ -27,7 +27,7 @@ def build_verifier() -> JWTVerifier:
     отвергается до вызова любого инструмента.
     """
     return JWTVerifier(
-        jwks_uri=settings.kc_jwks_uri,
+        jwks_uri=settings.kc_jwks_internal,  # внутренняя сеть; issuer проверяется по публичному
         issuer=settings.kc_issuer,
         audience=settings.kc_audience,
     )
