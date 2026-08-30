@@ -39,6 +39,18 @@ services:
     depends_on:
       - postgres
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ape}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+      MINIO_SERVER_URL: https://s3.engineer-ai.pro
+      MINIO_BROWSER_REDIRECT_URL: https://minio.engineer-ai.pro
+    volumes:
+      - minio_data:/data
+
   portal-api:
     build: .
     restart: unless-stopped
@@ -46,6 +58,7 @@ services:
     command: ["uvicorn", "portal_api.main:app", "--host", "0.0.0.0", "--port", "8090"]
     depends_on:
       - postgres
+      - minio
 
   caddy:
     image: caddy:2-alpine
@@ -86,3 +99,4 @@ volumes:
   ape_pg:
   caddy_data:
   caddy_config:
+  minio_data:

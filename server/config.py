@@ -77,6 +77,15 @@ class Settings:
     sessions_per_week: int = int(os.getenv("SESSIONS_PER_WEEK", "5"))
     weekly_token_limit: int = int(os.getenv("WEEKLY_TOKEN_LIMIT", "25000000"))
 
+    # MinIO (хранилище проектов). internal — для серверных операций, public —
+    # хост для presigned-URL, который открывает браузер студента.
+    minio_internal: str = os.getenv("MINIO_INTERNAL", "minio:9000")
+    minio_public: str = os.getenv("MINIO_PUBLIC", "s3.engineer-ai.pro")
+    minio_user: str = os.getenv("MINIO_ROOT_USER", "ape")
+    minio_password: str = os.getenv("MINIO_ROOT_PASSWORD", "")
+    minio_bucket: str = os.getenv("MINIO_BUCKET", "projects")
+    storage_limit_bytes: int = int(os.getenv("STORAGE_LIMIT_BYTES", str(600 * 1024 * 1024)))
+
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
     def collection(self, name: str) -> str:
