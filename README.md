@@ -1,6 +1,6 @@
 # AI Product Engineer — курсовой контур
 
-Инфраструктура курса **AI Product Engineer** (red_mad_robot): единая точка доступа
+Инфраструктура курса **AI Product Engineer** (Соколенко М.В. · РУТ (МИИТ)): единая точка доступа
 студентов к LLM и RAG через **FastMCP-сервер** с аутентификацией **Keycloak**,
 cost-журналом в **Postgres** и переиспользованием живого стека **sLAVA** (Qdrant +
 BGE-эмбеддер/реранкер + RouteAI) на **server-1** (201.51.5.24).
