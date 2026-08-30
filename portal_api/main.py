@@ -11,7 +11,7 @@ aud=course-mcp (audience-mapper клиента portal).
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -36,6 +36,17 @@ class GradeIn(BaseModel):
     score: float
     feedback: str = ""
     status: str = "accepted"
+
+
+class AnnIn(BaseModel):
+    title: str
+    body: str
+
+
+class ProjectIn(BaseModel):
+    repo_url: str = ""
+    description: str = ""
+    status: str = "idea"
 
 
 def _mc(public: bool) -> Minio:
@@ -319,4 +330,110 @@ async def grade(body: GradeIn, claims: dict = Depends(require_staff)) -> dict:
             "UPDATE submissions SET status=%s WHERE student_id=%s AND assignment_id=%s",
             (body.status, body.student_id, body.assignment_id),
         )
+    return {"ok": True}
+
+
+# ─────────────────────────── Дашборд / Анонсы / Проект ───────────────────────────
+
+def _course_week() -> tuple[int, date]:
+    start = date.fromisoformat(settings.course_start_date)
+    delta = (date.today() - start).days
+    return (0 if delta < 0 else min(settings.course_weeks, delta // 7 + 1)), start
+
+
+@app.get("/api/dashboard")
+async def dashboard(claims: dict = Depends(verify)) -> dict:
+    sub = claims["sub"]
+    week, start = _course_week()
+    async with db._conn() as c:  # noqa: SLF001
+        lecs = await (await c.execute("SELECT week,title,topic FROM lectures ORDER BY week")).fetchall()
+        asgs = await (await c.execute("SELECT id,week,title FROM assignments ORDER BY week")).fetchall()
+        accepted = {r[0] for r in await (await c.execute(
+            "SELECT assignment_id FROM submissions WHERE student_id=%s AND status='accepted'", (sub,))).fetchall()}
+        submitted = (await (await c.execute(
+            "SELECT COUNT(*) FROM submissions WHERE student_id=%s", (sub,))).fetchone())[0]
+        llm = (await (await c.execute(
+            "SELECT COUNT(*) FROM cost_journal WHERE student_id=%s AND kind='llm'", (sub,))).fetchone())[0]
+        emb = (await (await c.execute(
+            "SELECT COUNT(*) FROM cost_journal WHERE student_id=%s AND kind='embed'", (sub,))).fetchone())[0]
+        anns = await (await c.execute(
+            "SELECT title,body,created_at FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
+    cur_lec = None
+    for w, t, tp in lecs:
+        if w <= max(1, week):
+            cur_lec = {"week": w, "title": t, "topic": tp}
+    if cur_lec is None and lecs:
+        cur_lec = {"week": lecs[0][0], "title": lecs[0][1], "topic": lecs[0][2]}
+    now = datetime.now(timezone.utc)
+    nd = None
+    for aid, aw, at in asgs:
+        due = datetime.combine(start + timedelta(days=aw * 7), datetime.min.time(), tzinfo=timezone.utc)
+        if aid not in accepted and due > now:
+            nd = {"title": at, "week": aw, "due": due.date().isoformat(), "days_left": (due - now).days}
+            break
+    try:
+        files = sum(1 for _ in _mc(False).list_objects(settings.minio_bucket, prefix=f"{sub}/", recursive=True))
+    except Exception:  # noqa: BLE001
+        files = 0
+
+    def earned(word: str) -> bool:
+        return any(aid in accepted for aid, aw, at in asgs if word in at)
+
+    onboarding = [
+        {"key": "login", "title": "Вошёл в портал", "done": True},
+        {"key": "mcp", "title": "Первый вызов модели через MCP", "done": llm > 0},
+        {"key": "rag", "title": "Первая RAG-индексация", "done": emb > 0},
+        {"key": "submit", "title": "Первая сдача задания", "done": submitted > 0},
+        {"key": "file", "title": "Загрузил файл проекта", "done": files > 0},
+    ]
+    ach = [
+        {"key": "start", "title": "Старт", "icon": "🚀", "earned": True},
+        {"key": "mcp", "title": "Первый MCP", "icon": "⚡", "earned": llm > 0},
+        {"key": "rag", "title": "RAG", "icon": "🔎", "earned": emb > 0},
+        {"key": "hw", "title": "Первая ДЗ", "icon": "📦", "earned": submitted > 0},
+        {"key": "mvp", "title": "MVP", "icon": "🚢", "earned": earned("MVP")},
+        {"key": "defense", "title": "Защита", "icon": "🏆", "earned": earned("ащит")},
+    ]
+    return {
+        "student": claims.get("preferred_username", "студент"),
+        "week": week, "weeks": settings.course_weeks,
+        "progress_pct": round(100 * week / settings.course_weeks) if week else 0,
+        "current_lecture": cur_lec, "next_deadline": nd,
+        "onboarding": onboarding, "achievements": ach,
+        "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat()} for a in anns],
+    }
+
+
+@app.get("/api/announcements")
+async def announcements(claims: dict = Depends(verify)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        rows = await (await c.execute(
+            "SELECT title,body,created_by,created_at FROM announcements ORDER BY created_at DESC LIMIT 50")).fetchall()
+    return [{"title": r[0], "body": r[1], "by": r[2], "created_at": r[3].isoformat()} for r in rows]
+
+
+@app.post("/api/admin/announcements")
+async def post_announcement(body: AnnIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("INSERT INTO announcements(title,body,created_by) VALUES(%s,%s,%s)",
+                        (body.title, body.body, claims.get("preferred_username", "?")))
+    return {"ok": True}
+
+
+@app.get("/api/my/project")
+async def get_project(claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        r = await (await c.execute(
+            "SELECT repo_url,description,status FROM projects WHERE student_id=%s", (claims["sub"],))).fetchone()
+    return {"repo_url": r[0] if r else "", "description": r[1] if r else "", "status": r[2] if r else "idea"}
+
+
+@app.post("/api/my/project")
+async def set_project(body: ProjectIn, claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO projects(student_id,username,repo_url,description,status,updated_at) "
+            "VALUES(%s,%s,%s,%s,%s,now()) ON CONFLICT(student_id) DO UPDATE SET "
+            "repo_url=EXCLUDED.repo_url,description=EXCLUDED.description,status=EXCLUDED.status,updated_at=now()",
+            (claims["sub"], claims.get("preferred_username", "?"), body.repo_url, body.description, body.status))
     return {"ok": True}

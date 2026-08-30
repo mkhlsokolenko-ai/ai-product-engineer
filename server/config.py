@@ -93,6 +93,11 @@ class Settings:
     minio_bucket: str = os.getenv("MINIO_BUCKET", "projects")
     storage_limit_bytes: int = int(os.getenv("STORAGE_LIMIT_BYTES", str(600 * 1024 * 1024)))
 
+    # Курс: дата старта (для расчёта текущей недели и дедлайнов) и длительность.
+    course_start_date: str = os.getenv("COURSE_START_DATE", "2026-08-25")
+    course_weeks: int = int(os.getenv("COURSE_WEEKS", "15"))
+    langfuse_url: str = os.getenv("LANGFUSE_URL", "")
+
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
     def collection(self, name: str) -> str:

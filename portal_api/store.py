@@ -23,6 +23,14 @@ CREATE TABLE IF NOT EXISTS grades (
     score NUMERIC, feedback TEXT, graded_by TEXT, graded_at TIMESTAMPTZ DEFAULT now(),
     UNIQUE(student_id, assignment_id)
 );
+CREATE TABLE IF NOT EXISTS announcements (
+    id SERIAL PRIMARY KEY, title TEXT, body TEXT, created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS projects (
+    student_id TEXT PRIMARY KEY, username TEXT, repo_url TEXT, description TEXT,
+    status TEXT DEFAULT 'idea', updated_at TIMESTAMPTZ DEFAULT now()
+);
 """
 
 # 15 недель × 5 блоков (структура из программы v0.5)
