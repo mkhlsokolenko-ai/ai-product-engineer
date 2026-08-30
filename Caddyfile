@@ -17,6 +17,11 @@ auth.engineer-ai.pro {
     reverse_proxy keycloak:8080
 }
 
+# MCP-шлюз (FastMCP, streamable-http). Клиент OpenCode: /mcp + Bearer JWT.
+mcp.engineer-ai.pro {
+    reverse_proxy mcp:8787
+}
+
 # Включается вместе с профилем mcp (docker compose --profile mcp up -d):
 # mcp.engineer-ai.pro {
 #     reverse_proxy mcp:8787
