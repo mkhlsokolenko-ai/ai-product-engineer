@@ -1,5 +1,12 @@
 # TLS-фронт (Let's Encrypt автоматически). A-записи -> 201.51.5.24.
 
+# Портал курса (статический SPA, DS red-team). Вход — Keycloak PKCE.
+engineer-ai.pro, www.engineer-ai.pro {
+    root * /srv/portal
+    file_server
+    try_files {path} /index.html
+}
+
 auth.engineer-ai.pro {
     reverse_proxy keycloak:8080
 }
