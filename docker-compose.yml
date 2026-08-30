@@ -48,6 +48,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
       MINIO_SERVER_URL: https://s3.engineer-ai.pro
       MINIO_BROWSER_REDIRECT_URL: https://minio.engineer-ai.pro
+      MINIO_API_CORS_ALLOW_ORIGIN: "https://engineer-ai.pro,https://www.engineer-ai.pro"
     volumes:
       - minio_data:/data
 

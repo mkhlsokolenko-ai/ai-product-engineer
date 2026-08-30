@@ -132,7 +132,7 @@ function showLogin(){$("login").classList.remove("hidden");$("app").classList.ad
 
 // ── App shell ──
 const TABS=[
-  ["cabinet","Кабинет"],["lectures","Лекции"],["homework","Домашки"],["grades","Оценки"],["board","Лидерборд"],
+  ["cabinet","Кабинет"],["project","Проект"],["lectures","Лекции"],["homework","Домашки"],["grades","Оценки"],["board","Лидерборд"],
 ];
 const STAFF_TAB=["admin","Админка"];
 let CUR="cabinet";
@@ -149,7 +149,7 @@ function boot(tok){
   go("cabinet");
 }
 function go(k){CUR=k;$("tabs").querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.k===k));
-  ({cabinet:vCabinet,lectures:vLectures,homework:vHomework,grades:vGrades,board:vBoard,admin:vAdmin}[k]||vCabinet)();}
+  ({cabinet:vCabinet,project:vProject,lectures:vLectures,homework:vHomework,grades:vGrades,board:vBoard,admin:vAdmin}[k]||vCabinet)();}
 const view=h=>$("view").innerHTML=h;
 
 // ── Views ──
@@ -257,6 +257,36 @@ async function gradeHw(sid,aid){
   await api("/api/admin/grade",{method:"POST",body:JSON.stringify({student_id:sid,assignment_id:aid,score,status:$("stt_"+sid+"_"+aid).value,feedback:$("fb_"+sid+"_"+aid).value})});
   vAdmin();
 }
+
+async function vProject(){
+  view(`<h2>Проект · файлы</h2><div id="p">Загрузка…</div>`);
+  const s=await api("/api/storage/my-files").catch(()=>({files:[],used_bytes:0,limit_bytes:629145600,used_pct:0}));
+  const files=s.files||[];
+  $("p").innerHTML=`
+    <div class="card"><div class="caps">Хранилище проекта</div>
+      <div class="row"><span class="muted">Занято</span><span class="mono">${mb(s.used_bytes)} / ${mb(s.limit_bytes)} МБ</span></div>
+      <div class="bar"><i style="width:${Math.min(100,s.used_pct||0)}%"></i></div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="fileIn" style="flex:1;min-width:200px">
+        <button class="btn primary" id="btnUp">Загрузить</button></div>
+      <div class="faint" style="margin-top:6px">Документы (PDF/DOCX/MD), датасеты, артефакты. Лимит 600 МБ. Секреты/ПДн — нельзя.</div>
+    </div>
+    <div class="card"><table><tr><th>Файл</th><th>Размер</th><th></th></tr>
+      ${files.map(f=>`<tr><td>${esc(f.name)}</td><td class="mono">${mb(f.size)} МБ</td>
+        <td style="text-align:right"><a href="#" onclick="dlFile('${esc(f.name)}');return false">скачать</a> ·
+          <a href="#" style="color:var(--crit)" onclick="delFile('${esc(f.name)}');return false">удалить</a></td></tr>`).join("")
+        ||`<tr><td colspan=3 class="muted">Файлов пока нет</td></tr>`}</table></div>`;
+  $("btnUp").onclick=uploadFile;
+}
+async function uploadFile(){
+  const f=$("fileIn").files[0]; if(!f)return alert("Выбери файл");
+  let r; try{ r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);}
+  catch(e){return alert("Лимит хранилища исчерпан или ошибка");}
+  try{ const put=await fetch(r.url,{method:"PUT",body:f}); if(!put.ok)throw new Error(put.status); vProject(); }
+  catch(e){ alert("Не удалось загрузить. Проверь, что домен s3.engineer-ai.pro поднят (DNS). "+e); }
+}
+async function dlFile(name){ const r=await api("/api/storage/download-url?filename="+encodeURIComponent(name)); window.open(r.url,"_blank"); }
+async function delFile(name){ if(!confirm("Удалить "+name+"?"))return; await api("/api/storage/file?filename="+encodeURIComponent(name),{method:"DELETE"}); vProject(); }
 
 $("btnGithub").onclick=()=>login("github");
 $("btnLogin").onclick=()=>login();

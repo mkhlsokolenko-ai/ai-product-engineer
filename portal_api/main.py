@@ -171,6 +171,28 @@ async def upload_url(filename: str, size: int = 0, claims: dict = Depends(verify
     return {"url": url, "object": obj, "method": "PUT", "expires_sec": 3600}
 
 
+def _safe_name(filename: str) -> str:
+    if not filename or ".." in filename or filename.startswith("/") or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Недопустимое имя файла")
+    return filename
+
+
+@app.get("/api/storage/download-url")
+async def download_url(filename: str, claims: dict = Depends(verify)) -> dict:
+    """Presigned GET-URL для скачивания своего файла."""
+    obj = f"{claims['sub']}/{_safe_name(filename)}"
+    url = _mc(True).presigned_get_object(settings.minio_bucket, obj, expires=timedelta(hours=1))
+    return {"url": url}
+
+
+@app.delete("/api/storage/file")
+async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
+    """Удалить свой файл (только в пределах своего префикса)."""
+    obj = f"{claims['sub']}/{_safe_name(filename)}"
+    _mc(False).remove_object(settings.minio_bucket, obj)
+    return {"ok": True}
+
+
 # ─────────────────────────── Лекции / Домашки / Оценки ───────────────────────────
 
 @app.get("/api/lectures")
