@@ -1,0 +1,41 @@
+# Курсовой контур на server-1 (sLAVA-пилот, 201.51.5.24).
+# Qdrant / RouteAI-доступ / (опц.) sLAVA-reranker уже живут на хосте — MCP ходит
+# к ним по 127.0.0.1, поэтому network_mode: host. Postgres поднимаем здесь же.
+# Наружу торчит только Caddy (443, TLS). MCP слушает 127.0.0.1:8787.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ape
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-changeme}
+      POSTGRES_DB: ape
+    volumes:
+      - ape_pg:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  mcp:
+    build: .
+    restart: unless-stopped
+    network_mode: host          # чтобы видеть Qdrant/sLAVA/Postgres на 127.0.0.1
+    env_file: .env
+    depends_on:
+      - postgres
+    command: ["ape-mcp"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host          # 443 наружу, проксирует на 127.0.0.1:8787
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - mcp
+
+volumes:
+  ape_pg:
+  caddy_data:
+  caddy_config:
