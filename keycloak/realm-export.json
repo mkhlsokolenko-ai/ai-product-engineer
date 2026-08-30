@@ -10,7 +10,8 @@
   "roles": {
     "realm": [
       { "name": "student", "description": "Студент курса" },
-      { "name": "lecturer", "description": "Лектор — админка, оценки, cost_report" }
+      { "name": "lecturer", "description": "Лектор — оценки, проверка домашек, cost_report" },
+      { "name": "admin", "description": "Администратор платформы — управление курсом и пользователями" }
     ]
   },
   "defaultRoles": ["student"],

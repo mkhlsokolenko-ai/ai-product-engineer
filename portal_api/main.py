@@ -17,9 +17,25 @@ import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException
 from jwt import PyJWKClient
 from minio import Minio
+from pydantic import BaseModel
 
+from portal_api import store
 from server import db
 from server.config import settings
+
+
+class SubmissionIn(BaseModel):
+    assignment_id: int
+    url: str
+    note: str = ""
+
+
+class GradeIn(BaseModel):
+    student_id: str
+    assignment_id: int
+    score: float
+    feedback: str = ""
+    status: str = "accepted"
 
 
 def _mc(public: bool) -> Minio:
@@ -49,16 +65,18 @@ def verify(authorization: str = Header(default="")) -> dict:
         raise HTTPException(status_code=401, detail=f"Невалидный токен: {e}") from e
 
 
-def require_lecturer(claims: dict = Depends(verify)) -> dict:
-    roles = claims.get("realm_access", {}).get("roles", [])
-    if "lecturer" not in roles:
-        raise HTTPException(status_code=403, detail="Только для роли lecturer")
+def require_staff(claims: dict = Depends(verify)) -> dict:
+    """lecturer или admin."""
+    roles = set(claims.get("realm_access", {}).get("roles", []))
+    if not ({"lecturer", "admin"} & roles):
+        raise HTTPException(status_code=403, detail="Только для lecturer/admin")
     return claims
 
 
 @app.on_event("startup")
 async def _startup() -> None:
     await db.init_pool()
+    await store.ensure()
 
 
 @app.get("/api/health")
@@ -84,7 +102,7 @@ async def leaderboard(claims: dict = Depends(verify)) -> list[dict]:
 
 
 @app.get("/api/admin/cost-report")
-async def admin_cost_report(claims: dict = Depends(require_lecturer)) -> dict:
+async def admin_cost_report(claims: dict = Depends(require_staff)) -> dict:
     async with db._conn() as conn:  # noqa: SLF001
         cur = await conn.execute(
             "SELECT username, SUM(input_tokens+output_tokens) AS t, SUM(cost_rub) AS c, "
@@ -151,3 +169,131 @@ async def upload_url(filename: str, size: int = 0, claims: dict = Depends(verify
     obj = f"{sub}/{safe}"
     url = _mc(True).presigned_put_object(settings.minio_bucket, obj, expires=timedelta(hours=1))
     return {"url": url, "object": obj, "method": "PUT", "expires_sec": 3600}
+
+
+# ─────────────────────────── Лекции / Домашки / Оценки ───────────────────────────
+
+@app.get("/api/lectures")
+async def lectures(claims: dict = Depends(verify)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        cur = await c.execute(
+            "SELECT week,block,title,topic,materials_url FROM lectures ORDER BY position,week"
+        )
+        rows = await cur.fetchall()
+    return [
+        {"week": r[0], "block": r[1], "title": r[2], "topic": r[3], "materials_url": r[4]}
+        for r in rows
+    ]
+
+
+@app.get("/api/assignments")
+async def assignments(claims: dict = Depends(verify)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        cur = await c.execute(
+            "SELECT id,week,title,description,fmt,max_score FROM assignments ORDER BY position,week"
+        )
+        rows = await cur.fetchall()
+    return [
+        {"id": r[0], "week": r[1], "title": r[2], "description": r[3], "fmt": r[4], "max_score": r[5]}
+        for r in rows
+    ]
+
+
+@app.get("/api/my/submissions")
+async def my_submissions(claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        cur = await c.execute(
+            "SELECT assignment_id,url,note,status,submitted_at FROM submissions WHERE student_id=%s",
+            (claims["sub"],),
+        )
+        rows = await cur.fetchall()
+    return {
+        str(r[0]): {"url": r[1], "note": r[2], "status": r[3], "submitted_at": r[4].isoformat()}
+        for r in rows
+    }
+
+
+@app.post("/api/my/submissions")
+async def submit(body: SubmissionIn, claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO submissions(student_id,username,assignment_id,url,note,status,submitted_at) "
+            "VALUES(%s,%s,%s,%s,%s,'submitted',now()) "
+            "ON CONFLICT(student_id,assignment_id) DO UPDATE SET "
+            "url=EXCLUDED.url, note=EXCLUDED.note, status='submitted', submitted_at=now()",
+            (claims["sub"], claims.get("preferred_username", "?"), body.assignment_id, body.url, body.note),
+        )
+    return {"ok": True}
+
+
+@app.get("/api/my/grades")
+async def my_grades(claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        cur = await c.execute(
+            "SELECT assignment_id,score,feedback,graded_at FROM grades WHERE student_id=%s",
+            (claims["sub"],),
+        )
+        rows = await cur.fetchall()
+    return {
+        str(r[0]): {
+            "score": float(r[1]) if r[1] is not None else None,
+            "feedback": r[2],
+            "graded_at": r[3].isoformat(),
+        }
+        for r in rows
+    }
+
+
+@app.get("/api/progress")
+async def progress(claims: dict = Depends(verify)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        total = (await (await c.execute("SELECT COUNT(*) FROM assignments")).fetchone())[0]
+        sub = (await (await c.execute(
+            "SELECT COUNT(*) FROM submissions WHERE student_id=%s", (claims["sub"],))).fetchone())[0]
+        acc = (await (await c.execute(
+            "SELECT COUNT(*) FROM submissions WHERE student_id=%s AND status='accepted'",
+            (claims["sub"],))).fetchone())[0]
+    return {"assignments_total": int(total), "submitted": int(sub), "accepted": int(acc)}
+
+
+@app.get("/api/admin/submissions")
+async def admin_submissions(claims: dict = Depends(require_staff)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        cur = await c.execute(
+            "SELECT s.username,s.assignment_id,a.title,s.url,s.note,s.status,s.submitted_at,"
+            "       g.score,g.feedback,s.student_id "
+            "FROM submissions s JOIN assignments a ON a.id=s.assignment_id "
+            "LEFT JOIN grades g ON g.student_id=s.student_id AND g.assignment_id=s.assignment_id "
+            "ORDER BY s.submitted_at DESC"
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "username": r[0], "assignment_id": r[1], "assignment": r[2], "url": r[3], "note": r[4],
+            "status": r[5], "submitted_at": r[6].isoformat(),
+            "score": float(r[7]) if r[7] is not None else None, "feedback": r[8], "student_id": r[9],
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/admin/grade")
+async def grade(body: GradeIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT username FROM submissions WHERE student_id=%s AND assignment_id=%s",
+            (body.student_id, body.assignment_id))).fetchone()
+        uname = row[0] if row else "?"
+        await c.execute(
+            "INSERT INTO grades(student_id,username,assignment_id,score,feedback,graded_by,graded_at) "
+            "VALUES(%s,%s,%s,%s,%s,%s,now()) "
+            "ON CONFLICT(student_id,assignment_id) DO UPDATE SET "
+            "score=EXCLUDED.score, feedback=EXCLUDED.feedback, graded_by=EXCLUDED.graded_by, graded_at=now()",
+            (body.student_id, uname, body.assignment_id, body.score, body.feedback,
+             claims.get("preferred_username", "?")),
+        )
+        await c.execute(
+            "UPDATE submissions SET status=%s WHERE student_id=%s AND assignment_id=%s",
+            (body.status, body.student_id, body.assignment_id),
+        )
+    return {"ok": True}
