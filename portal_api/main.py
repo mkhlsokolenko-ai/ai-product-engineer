@@ -316,6 +316,19 @@ async def my_grades(claims: dict = Depends(verify)) -> dict:
     }
 
 
+@app.get("/api/my/cost-daily")
+async def cost_daily(claims: dict = Depends(verify)) -> list[dict]:
+    """Cost по дням текущей ISO-недели (для графика в Кабинете)."""
+    async with db._conn() as c:  # noqa: SLF001
+        rows = await (await c.execute(
+            "SELECT EXTRACT(ISODOW FROM ts)::int AS dow, SUM(cost_rub) "
+            "FROM cost_journal WHERE student_id=%s AND ts >= date_trunc('week', now()) "
+            "GROUP BY dow", (claims["sub"],))).fetchall()
+    m = {int(r[0]): float(r[1]) for r in rows}
+    days = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+    return [{"day": days[i], "cost": round(m.get(i + 1, 0.0), 2)} for i in range(7)]
+
+
 @app.get("/api/progress")
 async def progress(claims: dict = Depends(verify)) -> dict:
     async with db._conn() as c:  # noqa: SLF001

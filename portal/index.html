@@ -5,152 +5,109 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Product Engineer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* ── Светлая тема (EdTech, по умолчанию) ── */
-  :root{
-    --bg-0:#F1EFE8; --bg-1:#FFFFFF; --bg-2:#F7F6F3; --bg-inset:#F1EFE8;
-    --text-1:#1A1A1A; --text-2:#5F5E5A; --text-3:#75736B;
-    --border-1:rgba(0,0,0,.10); --border-2:rgba(0,0,0,.17);
-    --accent:#534AB7; --accent-hover:#6157C9; --accent-bg:rgba(83,74,183,.09); --accent-border:rgba(83,74,183,.30);
-    --ok:#3B6D11; --ok-bg:#EAF3DE; --warn:#854F0B; --warn-bg:#FAEEDA; --crit:#A32D2D; --crit-bg:#FCEBEB;
-    --nav-bg:rgba(255,255,255,.86); --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.05);
-    --font-ui:"Geist","Inter",system-ui,sans-serif; --font-mono:"JetBrains Mono",ui-monospace,monospace;
-    /* 4/8 спейсинг-шкала + токен-радиусы (design-direction/LUDA-аудит) */
-    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
-    --r-s:8px; --r-m:10px; --r-l:14px;
-  }
-  /* ── Тёмная тема (авто по системе, если не форсим светлую) ── */
-  @media(prefers-color-scheme:dark){:root:not([data-theme=light]){
-    --bg-0:#14171C; --bg-1:#1A1F27; --bg-2:#232A36; --bg-inset:#0E1116;
-    --text-1:#E8EAED; --text-2:#A7B0BC; --text-3:#8A94A0;
-    --border-1:rgba(255,255,255,.09); --border-2:rgba(255,255,255,.17);
-    --accent:#8B82F0; --accent-hover:#A29BF5; --accent-bg:rgba(139,130,240,.15); --accent-border:rgba(139,130,240,.42);
-    --ok:#7BC86B; --ok-bg:rgba(123,200,107,.15); --warn:#E5B567; --warn-bg:rgba(229,181,103,.15); --crit:#F0888B; --crit-bg:rgba(240,136,139,.15);
-    --nav-bg:rgba(20,23,28,.86); --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
-  }}
-  /* ── Тёмная тема (форс переключателем) ── */
-  :root[data-theme=dark]{
-    --bg-0:#14171C; --bg-1:#1A1F27; --bg-2:#232A36; --bg-inset:#0E1116;
-    --text-1:#E8EAED; --text-2:#A7B0BC; --text-3:#8A94A0;
-    --border-1:rgba(255,255,255,.09); --border-2:rgba(255,255,255,.17);
-    --accent:#8B82F0; --accent-hover:#A29BF5; --accent-bg:rgba(139,130,240,.15); --accent-border:rgba(139,130,240,.42);
-    --ok:#7BC86B; --ok-bg:rgba(123,200,107,.15); --warn:#E5B567; --warn-bg:rgba(229,181,103,.15); --crit:#F0888B; --crit-bg:rgba(240,136,139,.15);
-    --nav-bg:rgba(20,23,28,.86); --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg-0);color:var(--text-1);font:14px/1.55 var(--font-ui)}
-  a{color:var(--accent);text-decoration:none} a:hover{color:var(--accent-hover)}
-  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-  .hidden{display:none!important}
-  .mono{font-family:var(--font-mono)}
-  /* login */
-  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-  .lcard{background:var(--bg-1);border:1px solid var(--border-1);border-radius:var(--r-l);padding:32px;width:400px}
-  .wordmark{font:600 15px var(--font-mono);color:var(--accent);text-align:center;letter-spacing:.02em}
-  #login h1{font:600 19px var(--font-ui);text-align:center;margin:14px 0 4px}
-  .sub{color:var(--text-2);text-align:center;font-size:13px;margin:0 0 22px}
-  .divider{display:flex;align-items:center;gap:12px;color:var(--text-3);font-size:12px;margin:18px 0}
-  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border-1)}
-  /* топ-бар + левый сайдбар (EdTech workspace) */
-  .topbar{display:flex;align-items:center;gap:14px;padding:0 20px;height:56px;border-bottom:1px solid var(--border-1);
-    position:sticky;top:0;background:var(--nav-bg);backdrop-filter:blur(8px);z-index:30}
-  .iconbtn{background:var(--bg-2);border:1px solid var(--border-2);color:var(--text-1);border-radius:8px;
-    width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px}
-  .iconbtn:hover{border-color:var(--accent-border);color:var(--accent)}
-  .brand{font:600 14px var(--font-mono);color:var(--accent)}
-  .shell{display:flex;align-items:flex-start;max-width:1200px;margin:0 auto}
-  .side{width:216px;flex-shrink:0;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
-    padding:16px 10px;border-right:1px solid var(--border-1);display:flex;flex-direction:column;gap:2px;background:var(--bg-0)}
-  .tab{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-s);color:var(--text-2);
-    cursor:pointer;font-weight:500;font-size:13.5px;background:none;border:none;text-align:left;width:100%}
-  .tab .ti{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
-  .ic{display:block} .menubtn .ic,.iconbtn .ic{margin:0}
-  .tab:hover{color:var(--text-1);background:var(--bg-2)}
-  .tab.active{color:var(--accent);background:var(--accent-bg);font-weight:600}
-  .who{font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:10px}
-  main{flex:1;min-width:0;max-width:900px;margin:0 auto;padding:28px 28px 60px}
-  h2{font:600 22px var(--font-ui);margin:0 0 18px}
-  /* components */
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;
-    border-radius:var(--r-m);border:1px solid var(--border-2);background:var(--bg-2);color:var(--text-1);
-    font:600 13.5px var(--font-ui);cursor:pointer;transition:.15s}
-  .btn:hover{border-color:var(--accent-border);background:var(--accent-bg);color:var(--accent-hover)}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff} .btn.primary:hover{background:var(--accent-hover)}
-  .btn.sm{height:32px;padding:0 12px;font-size:12.5px}
-  .card{background:var(--bg-1);border:1px solid var(--border-1);border-radius:var(--r-l);padding:20px;margin-bottom:14px;box-shadow:var(--shadow)}
-  /* чипы-пилюли статусов */
-  .chip{display:inline-block;padding:2px 10px;border-radius:999px;font:600 11px var(--font-ui);white-space:nowrap}
-  .chip.done{background:var(--ok-bg);color:var(--ok)} .chip.doing{background:var(--warn-bg);color:var(--warn)}
-  .chip.todo{background:var(--bg-2);color:var(--text-2);border:1px solid var(--border-1)} .chip.risk{background:var(--crit-bg);color:var(--crit)}
-  .chip.info{background:var(--accent-bg);color:var(--accent)}
-  /* под-вкладки (командный центр) */
-  .subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
-  .subtab{padding:7px 13px;border-radius:8px;border:1px solid var(--border-1);background:var(--bg-1);color:var(--text-2);
-    cursor:pointer;font:600 12.5px var(--font-ui)}
-  .subtab.on{background:var(--accent);border-color:var(--accent);color:#fff}
-  .subtab:not(.on):hover{border-color:var(--accent-border);color:var(--text-1)}
-  /* метрики-плитки */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:18px}
-  .tile{background:var(--bg-1);border:1px solid var(--border-1);border-radius:12px;padding:13px 15px;box-shadow:var(--shadow)}
-  .tile .t-l{font-size:11.5px;color:var(--text-2)} .tile .t-v{font:600 23px/1.1 var(--font-mono);margin-top:5px}
-  /* dropzone (drag-and-drop, паттерн LUDA) */
-  .dropzone{border:1.5px dashed var(--border-2);border-radius:12px;padding:22px 16px;text-align:center;cursor:pointer;
-    color:var(--text-2);background:var(--bg-2);transition:.13s}
-  .dropzone:hover{border-color:var(--accent-border);color:var(--text-1)}
-  .dropzone.over{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
-  .dropzone .dz-ic{font-size:26px;display:block;margin-bottom:6px}
-  /* inline-edit в таблице лектора */
-  .ie{background:transparent;border:1px solid transparent;padding:4px 6px;border-radius:6px;width:100%;font:13px var(--font-ui);color:var(--text-1)}
-  .ie:hover{border-color:var(--border-1)} .ie:focus{background:var(--bg-inset);border-color:var(--accent);outline:none}
-  /* сигнал */
-  .signal{display:flex;gap:11px;padding:12px 14px;background:var(--bg-1);border:1px solid var(--border-1);border-radius:10px;align-items:flex-start;box-shadow:var(--shadow)}
-  .signal .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0}
-  /* мини-таблица КТ (пилюли-баллы) */
-  .kt{display:inline-block;min-width:26px;text-align:center;padding:2px 6px;border-radius:7px;font:600 11px var(--font-mono);margin-right:3px}
-  /* модалка */
-  .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
-  .modal{background:var(--bg-1);border:1px solid var(--border-1);border-radius:14px;padding:22px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
-  .modal h2{font-size:18px;margin-bottom:14px}
-  .fld{margin-bottom:12px} .fld label{display:block;font-size:12px;color:var(--text-2);margin-bottom:4px}
-  .mact{display:flex;gap:8px;margin-top:16px}
-  .grid{display:grid;gap:14px}
-  .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
-  @media(max-width:720px){.g3,.g2{grid-template-columns:1fr}}
-  .caps{font:600 10.5px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
-  .big{font:700 30px var(--font-mono);color:var(--accent)} .muted{color:var(--text-2)} .faint{color:var(--text-3)}
-  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-1);font-size:13.5px}
-  .row:last-child{border:none}
-  .bar{height:6px;border-radius:4px;background:var(--bg-inset);overflow:hidden;margin-top:8px} .bar>i{display:block;height:100%;background:var(--accent)}
-  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font:600 11px var(--font-mono)}
-  .b-blue{background:var(--accent-bg);color:var(--accent)} .b-ok{background:var(--ok-bg);color:var(--ok)} .b-warn{background:var(--warn-bg);color:var(--warn)}
-  input,textarea,select{width:100%;background:var(--bg-inset);border:1px solid var(--border-2);border-radius:var(--r-m);
-    padding:9px 12px;color:var(--text-1);font:13.5px var(--font-ui);outline:none}
-  input:focus,textarea:focus,select:focus{border-color:var(--accent-border)}
-  label{font-size:12px;color:var(--text-2);display:block;margin:10px 0 4px}
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border-1)} th{color:var(--text-2);font-weight:500;font-size:12px}
-  .lecblock{font:600 10.5px var(--font-mono);color:var(--text-3);margin:18px 0 8px;letter-spacing:.06em}
-  .foot{color:var(--text-3);font-size:11.5px;text-align:center;margin-top:20px}
-  .errbar{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:var(--r-m);padding:10px 14px;margin-bottom:14px;font-size:12.5px}
-  .menubtn{display:none;background:var(--bg-2);border:1px solid var(--border-2);color:var(--text-1);border-radius:8px;
-    width:34px;height:34px;font-size:16px;cursor:pointer}
-  /* планшет: сайдбар уже */
-  @media(max-width:900px){ .side{width:180px} main{padding:24px 20px 60px} }
-  /* мобильная адаптация — сайдбар выпадающим меню */
-  @media(max-width:720px){
-    .menubtn{display:inline-flex;align-items:center;justify-content:center}
-    .shell{display:block}
-    .side{position:fixed;top:56px;left:0;right:0;width:auto;height:auto;max-height:72vh;
-      border-right:none;border-bottom:1px solid var(--border-1);background:var(--bg-1);
-      box-shadow:0 14px 28px rgba(0,0,0,.28);z-index:25;display:none;padding:8px}
-    .side.open{display:flex}
-    .tab{font-size:15px;padding:12px}
-    main{padding:18px 14px 60px} h2{font-size:19px;margin-bottom:14px}
-    .lcard{width:100%}
-    table{font-size:12.5px} th,td{padding:7px 6px}
-    .grid.g3,.grid.g2{grid-template-columns:1fr}
-  }
+:root{
+--bg0:#F1EFE8;--bg1:#FFFFFF;--bg2:#F7F6F3;--inset:#F1EFE8;
+--ink1:#1A1A1A;--ink2:#5F5E5A;--ink3:#75736B;
+--accent:#534AB7;--accent-bg:rgba(83,74,183,.09);--accent-hover:#453DA0;
+--ok:#3B6D11;--ok-bg:#EAF3DE;--warn:#854F0B;--warn-bg:#FAEEDA;--crit:#A32D2D;--crit-bg:#FCEBEB;
+--b1:rgba(0,0,0,.10);--b2:rgba(0,0,0,.17);
+--shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.05);
+--mono:'JetBrains Mono',ui-monospace,monospace;
+}
+[data-theme="dark"]{
+--bg0:#14171C;--bg1:#1A1F27;--bg2:#232A36;--inset:#0E1116;
+--ink1:#E8EAED;--ink2:#A7B0BC;--ink3:#8A94A0;
+--accent:#8B82F0;--accent-bg:rgba(139,130,240,.15);--accent-hover:#A19AF5;
+--ok:#7BC86B;--ok-bg:rgba(123,200,107,.15);--warn:#E5B567;--warn-bg:rgba(229,181,103,.15);--crit:#F0888B;--crit-bg:rgba(240,136,139,.15);
+--b1:rgba(255,255,255,.09);--b2:rgba(255,255,255,.17);
+--shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Geist,Inter,system-ui,-apple-system,sans-serif;background:var(--bg0);color:var(--ink1);font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
+button,input,textarea,select{font-family:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.hidden{display:none!important}
+.mono{font-family:var(--mono)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+/* топ-бар */
+.topbar{position:sticky;top:0;z-index:40;height:56px;background:var(--bg1);border-bottom:1px solid var(--b1);backdrop-filter:blur(8px)}
+.tbin{max-width:1200px;margin:0 auto;height:56px;padding:0 20px;display:flex;align-items:center;gap:12px}
+.iconbtn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid var(--b1);border-radius:8px;background:var(--bg1);color:var(--ink2);cursor:pointer;transition:.15s}
+.iconbtn:hover{background:var(--bg2);color:var(--ink1)}
+.avatar{width:28px;height:28px;border-radius:999px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600}
+.logoutbtn{height:32px;padding:0 12px;border:1px solid var(--b1);border-radius:8px;background:var(--bg1);color:var(--ink2);font-size:12px;font-weight:500;cursor:pointer;transition:.15s}
+.logoutbtn:hover{background:var(--bg2);color:var(--ink1)}
+.menubtn{display:none}
+/* каркас */
+.shell{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:216px 1fr;align-items:start}
+.side{position:sticky;top:56px;padding:20px 12px;display:flex;flex-direction:column;gap:2px;height:calc(100vh - 56px);border-right:1px solid var(--b1);overflow-y:auto;background:var(--bg0)}
+.grp{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);font-family:var(--mono);padding:8px 10px 4px}
+.grp.mt{padding-top:14px}
+.navitem{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border:0;border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;transition:.15s;text-align:left;background:transparent;color:var(--ink2);width:100%}
+.navitem:hover{background:var(--bg2)}
+.navitem.active{background:var(--accent-bg);color:var(--accent)}
+.navbadge{margin-left:auto;font-size:10.5px;font-weight:600;font-family:var(--mono);border-radius:999px;padding:2px 7px}
+.quota{margin-top:auto;padding:10px;border-radius:10px;background:var(--bg2);font-size:11.5px;color:var(--ink2);line-height:1.45}
+main{padding:28px;min-width:0}
+/* компоненты */
+.card{background:var(--bg1);border:1px solid var(--b1);border-radius:14px;box-shadow:var(--shadow);padding:20px;margin-bottom:14px}
+h2{font-size:22px;font-weight:600;margin:0 0 16px}
+.t18{font-size:18px;font-weight:600}
+.caps{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);font-family:var(--mono)}
+.sub{font-size:13.5px;color:var(--ink2)}
+.faint{font-size:12px;color:var(--ink3)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--b2);background:var(--bg1);color:var(--ink1);font-size:13.5px;font-weight:500;cursor:pointer;transition:.15s}
+.btn:hover{background:var(--bg2)}
+.btn.primary{border-color:var(--accent);background:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-hover)}
+.btn.sm{height:32px;padding:0 12px;font-size:12px}
+.chip{font-size:11px;font-weight:600;border-radius:999px;padding:3px 10px;white-space:nowrap;display:inline-block}
+.tile{background:var(--bg1);border:1px solid var(--b1);border-radius:14px;box-shadow:var(--shadow);padding:16px}
+.tile .l{font-size:11.5px;color:var(--ink2);margin-bottom:6px}
+.tile .v{font-family:var(--mono);font-size:23px;font-weight:700}
+.tile .m{font-size:11px;color:var(--ink3);margin-top:4px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px}
+.inp{height:40px;padding:0 12px;border:1px solid var(--b2);border-radius:10px;background:var(--inset);color:var(--ink1);font-size:13.5px;width:100%}
+.inp.mono{font-family:var(--mono)}
+.ta{padding:10px 12px;border:1px solid var(--b2);border-radius:10px;background:var(--inset);color:var(--ink1);font-size:13.5px;width:100%;resize:vertical}
+.sel{height:40px;padding:0 10px;border:1px solid var(--b2);border-radius:10px;background:var(--inset);color:var(--ink1);font-size:13.5px;width:100%}
+.lbl{font-size:11.5px;font-weight:500;color:var(--ink2);display:block}
+.ie{width:100%;height:32px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink1);font-size:13px}
+.ie:hover{border-color:var(--b1);background:var(--bg2)}.ie:focus{background:var(--inset);border-color:var(--accent);outline:none}
+.dz{border:2px dashed var(--b2);background:transparent;border-radius:14px;padding:24px;text-align:center;cursor:pointer;transition:.15s;margin-bottom:14px}
+.dz.over{border-color:var(--accent);background:var(--accent-bg)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:var(--bg2)}
+th{text-align:left;padding:8px 12px;font-size:12px;font-weight:500;color:var(--ink2)}
+th:first-child{border-radius:8px 0 0 8px}th:last-child{border-radius:0 8px 8px 0}
+td{padding:10px 12px;border-bottom:1px solid var(--b1)}
+.pbar{height:8px;border-radius:999px;background:var(--inset);overflow:hidden}
+.pbar>i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .3s}
+.subbar{display:flex;gap:4px;flex-wrap:wrap;padding:4px;background:var(--bg2);border-radius:10px;margin-bottom:14px}
+.subtab{height:32px;padding:0 12px;border:0;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;transition:.15s;background:transparent;color:var(--ink2)}
+.subtab.active{background:var(--bg1);color:var(--ink1)}
+.subtab:not(.active):hover{color:var(--ink1)}
+.modalbg{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{width:100%;max-width:460px;background:var(--bg1);border-radius:14px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.28);animation:toastIn .2s ease-out}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:90;display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:999px;background:var(--ink1);color:var(--bg1);font-size:13.5px;font-weight:500;box-shadow:0 12px 32px rgba(0,0,0,.25);animation:toastIn .2s ease-out}
+.view{animation:fadeUp .3s ease-out}
+/* логин */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.lcard{background:var(--bg1);border:1px solid var(--b1);border-radius:14px;box-shadow:var(--shadow);padding:32px;width:400px;max-width:100%}
+/* мобилка */
+@media(max-width:860px){.shell{grid-template-columns:180px 1fr}main{padding:22px 18px}}
+@media(max-width:720px){
+.menubtn{display:flex}
+.shell{display:block}
+.side{position:fixed;top:56px;left:0;right:0;width:auto;height:auto;max-height:74vh;border-right:0;border-bottom:1px solid var(--b1);background:var(--bg1);box-shadow:0 14px 28px rgba(0,0,0,.28);z-index:25;display:none}
+.side.open{display:flex}
+main{padding:18px 14px 60px}
+.grid2{grid-template-columns:1fr!important}
+}
 </style>
 </head>
 <body>
@@ -158,33 +115,49 @@
 <!-- Логин -->
 <div id="login" class="hidden">
   <div class="lcard">
-    <div class="wordmark">engineer-ai.pro</div>
-    <h1>AI Product Engineer</h1>
-    <p class="sub">Соколенко М.В. · РУТ (МИИТ) · единый вход</p>
+    <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:6px">
+      <svg width="34" height="34" viewBox="0 0 48 48"><rect width="48" height="48" rx="14" fill="var(--bg2)"/><g stroke="var(--accent)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 36 24 12l10 24"/><path d="M17.6 27.5h12.8"/></g><circle cx="24" cy="12" r="4.2" fill="var(--accent)"/><circle cx="14" cy="36" r="3.6" fill="var(--bg2)" stroke="var(--accent)" stroke-width="2.6"/><circle cx="34" cy="36" r="3.6" fill="var(--bg2)" stroke="var(--accent)" stroke-width="2.6"/></svg>
+    </div>
+    <div style="text-align:center;font-family:var(--mono);font-size:13px;color:var(--accent)">engineer-ai.pro</div>
+    <h1 style="font-size:20px;font-weight:600;text-align:center;margin:8px 0 4px">AI Product Engineer</h1>
+    <p style="text-align:center;color:var(--ink2);font-size:13px;margin:0 0 22px">Соколенко М.В. · РУТ (МИИТ) · единый вход</p>
     <button class="btn primary" style="width:100%" id="btnGithub">
       <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       Продолжить с GitHub</button>
-    <div class="divider">или</div>
+    <div style="display:flex;align-items:center;gap:12px;color:var(--ink3);font-size:12px;margin:16px 0"><span style="flex:1;height:1px;background:var(--b1)"></span>или<span style="flex:1;height:1px;background:var(--b1)"></span></div>
     <button class="btn" style="width:100%" id="btnLogin">Вход по логину</button>
-    <p class="foot">Входя, ты соглашаешься с правилами курса.</p>
+    <p style="color:var(--ink3);font-size:11.5px;text-align:center;margin-top:18px">Входя, ты соглашаешься с правилами курса.</p>
   </div>
 </div>
 
 <!-- Приложение -->
 <div id="app" class="hidden">
-  <header class="topbar">
-    <button class="menubtn" id="menuBtn" aria-label="Меню разделов">☰</button>
-    <span class="brand">engineer-ai.pro</span>
-    <span style="flex:1"></span>
-    <span class="who"><button class="iconbtn" id="btnTheme" aria-label="Сменить тему" title="Сменить тему">🌙</button>
-      <span id="whoName"></span><span class="badge b-blue" id="whoRole">student</span>
-      <button class="btn sm" id="btnLogout">Выйти</button></span>
-  </header>
+  <header class="topbar"><div class="tbin">
+    <button class="iconbtn menubtn" id="menuBtn" aria-label="Меню"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg width="28" height="28" viewBox="0 0 48 48" role="img" aria-label="AI Product Engineer"><rect width="48" height="48" rx="14" fill="var(--bg2)"/><g stroke="var(--accent)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 36 24 12l10 24"/><path d="M17.6 27.5h12.8"/></g><circle cx="24" cy="12" r="4.2" fill="var(--accent)"/><circle cx="14" cy="36" r="3.6" fill="var(--bg2)" stroke="var(--accent)" stroke-width="2.6"/><circle cx="34" cy="36" r="3.6" fill="var(--bg2)" stroke="var(--accent)" stroke-width="2.6"/></svg>
+      <div style="display:flex;flex-direction:column;line-height:1.15">
+        <span style="font-size:13.5px;font-weight:600">AI Product Engineer</span>
+        <span style="font-size:11px;color:var(--ink3);font-family:var(--mono)">engineer-ai.pro</span>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <button class="iconbtn" id="btnTheme" aria-label="Переключить тему"></button>
+    <div style="display:flex;align-items:center;gap:8px;padding-left:12px;border-left:1px solid var(--b1)">
+      <div class="avatar" id="uAv"></div>
+      <div style="display:flex;flex-direction:column;line-height:1.15">
+        <span style="font-size:12px;font-weight:500" id="uName"></span>
+        <span style="font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px;font-weight:600;font-family:var(--mono)" id="uRole"></span>
+      </div>
+    </div>
+    <button class="logoutbtn" id="btnLogout">Выйти</button>
+  </div></header>
   <div class="shell">
-    <nav class="side" id="tabs" aria-label="Разделы курса"></nav>
+    <nav class="side" id="side" aria-label="Разделы"></nav>
     <main id="view"></main>
   </div>
   <div id="modalHost"></div>
+  <div id="toastHost"></div>
 </div>
 
 <script>
@@ -192,31 +165,33 @@ const KC="https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openi
 const CLIENT="portal", REDIRECT=location.origin+"/";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
-const fmtN=n=>n>=1e6?(n/1e6).toFixed(1)+"M":Number(n||0).toLocaleString("ru-RU");
+const fmtN=n=>{n=Number(n||0);return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"k":String(n);};
 const mb=b=>(b/1048576).toFixed(1);
 const ragCollection=()=>"ape_stu_"+String((CLAIMS.preferred_username||CLAIMS.sub||"me")).toLowerCase().replace(/[^a-z0-9_]/g,"_").slice(0,32);
-// ── Иконки (одноцветные векторные, lucide-стиль, currentColor) ──
-const ICONS={
-  home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
-  lectures:'<path d="M21.4 10.9a1 1 0 0 0 0-1.8L12.8 5.2a2 2 0 0 0-1.6 0L2.6 9.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
-  homework:'<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
-  project:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
-  grades:'<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
-  community:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-  cabinet:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  admin:'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
-  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/>',
-  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-  menu:'<path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h16"/>',
-  upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>',
-  copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
+const chip=(bg,fg,txt)=>`<span class="chip" style="background:${bg};color:${fg}">${esc(txt)}</span>`;
+const CH={done:['var(--ok-bg)','var(--ok)'],doing:['var(--warn-bg)','var(--warn)'],todo:['var(--bg2)','var(--ink2)'],risk:['var(--crit-bg)','var(--crit)'],info:['var(--accent-bg)','var(--accent)']};
+
+// ── Иконки (одноцветные, из дизайна) ──
+const IC={
+ home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
+ lectures:'<path d="M2 8.5 12 4l10 4.5-10 4.5z"/><path d="M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/>',
+ homework:'<path d="M9 4h6v3H9z"/><path d="M15 5.5h3V21H6V5.5h3"/><path d="m9.5 13 2 2 3.5-3.5"/>',
+ project:'<path d="M12 3c3.5 2 5.5 5.5 5.5 9.5L12 18l-5.5-5.5C6.5 8.5 8.5 5 12 3z"/><circle cx="12" cy="10.5" r="1.8"/><path d="M8.5 18.5 7 21m8.5-2.5L17 21"/>',
+ grades:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+ community:'<circle cx="9" cy="8" r="3"/><path d="M3 19c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16 5.5a3 3 0 0 1 0 5.5M17 14c2.4.5 4 2.4 4 5"/>',
+ cabinet:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.4-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.8 1.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.6 0z"/>',
+ admin:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>',
+ moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+ up:'<path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v3h16v-3"/>',
+ copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ chev:'<path d="m6 9 6 6 6-6"/>'
 };
-const svg=(n,s=18)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]||''}</svg>`;
-// ── Тема (светлая по умолчанию, тёмная по переключателю/системе) ──
-function curTheme(){const s=localStorage.getItem('theme');if(s)return s;
-  return (window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
-function applyTheme(t){document.documentElement.setAttribute('data-theme',t);
-  const b=$("btnTheme");if(b)b.innerHTML=t==='dark'?svg('sun',17):svg('moon',17);}
+const ic=(n,s=17,st=1.8,color='')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${color||'currentColor'}" stroke-width="${st}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
+
+// ── Тема ──
+function curTheme(){const s=localStorage.getItem('theme');if(s)return s;return (window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);const b=$("btnTheme");if(b)b.innerHTML=ic(t==='dark'?'sun':'moon',17);}
 function toggleTheme(){const t=curTheme()==='dark'?'light':'dark';localStorage.setItem('theme',t);applyTheme(t);}
 applyTheme(curTheme());
 
@@ -227,7 +202,6 @@ const chal=async v=>b64(await crypto.subtle.digest('SHA-256',new TextEncoder().e
 const jwtp=t=>{try{return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')))}catch{return{}}};
 const expd=t=>{const p=jwtp(t);return !p.exp||p.exp*1000<Date.now()+5000};
 let TOKEN=null, CLAIMS={}, ROLES=[];
-
 async function login(idp){
   const v=rnd(48);sessionStorage.setItem('pkce',v);const st=rnd(16);sessionStorage.setItem('st',st);
   const p=new URLSearchParams({client_id:CLIENT,response_type:'code',scope:'openid',redirect_uri:REDIRECT,state:st,code_challenge:await chal(v),code_challenge_method:'S256'});
@@ -245,530 +219,382 @@ async function api(path,opts={}){
   if(!r.ok)throw new Error(r.status);return r.status===204?null:r.json();
 }
 function showLogin(){$("login").classList.remove("hidden");$("app").classList.add("hidden");}
+function toast(msg){const h=$("toastHost");h.innerHTML=`<div class="toast">${ic('chev'?'copy':'copy')&&''}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L19 7"/></svg>${esc(msg)}</div>`;clearTimeout(toast._t);toast._t=setTimeout(()=>h.innerHTML="",2200);}
 
-// ── App shell ──
-const TABS=[
-  ["home","Главная","🏠"],["lectures","Курс","📚"],["homework","Задания","✍️"],["project","Мой проект","🚀"],
-  ["grades","Оценки","📊"],["community","Сообщество","👥"],["cabinet","Кабинет","⚙️"],
+// ── Навигация ──
+const NAV=[
+  ["Обучение",[["home","Главная","home"],["lectures","Курс","lectures"],["homework","Задания","homework"]]],
+  ["Проект",[["project","Мой проект","project"],["grades","Оценки","grades"],["community","Сообщество","community"],["cabinet","Кабинет","cabinet"]]],
 ];
-const STAFF_TAB=["admin","Командный центр","🛠️"];
-let CUR="cabinet";
+const STAFF=["Лектор",[["admin","Командный центр","admin"]]];
+let CUR="home", CHROME={hwDue:0,tokensWeek:0,quotaPct:0,adminBadge:0};
 
 function boot(tok){
   TOKEN=tok;CLAIMS=jwtp(tok);ROLES=(CLAIMS.realm_access&&CLAIMS.realm_access.roles)||[];
   const staff=ROLES.includes("lecturer")||ROLES.includes("admin");
-  $("whoName").textContent=CLAIMS.preferred_username||CLAIMS.name||"студент";
-  $("whoRole").textContent=ROLES.includes("admin")?"admin":ROLES.includes("lecturer")?"lecturer":"student";
-  const tabs=staff?[...TABS,STAFF_TAB]:TABS;
-  $("tabs").innerHTML=tabs.map(([k,l])=>`<button class="tab" data-k="${k}"><span class="ti">${svg(k)}</span>${l}</button>`).join("");
-  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>go(b.dataset.k));
-  $("menuBtn").innerHTML=svg('menu',18);
-  $("menuBtn").onclick=()=>$("tabs").classList.toggle("open");
+  const name=CLAIMS.name||CLAIMS.preferred_username||"студент";
+  $("uName").textContent=name;
+  $("uRole").textContent=ROLES.includes("admin")?"admin":staff?"lecturer":"student";
+  $("uAv").textContent=name.split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+  renderNav(staff);
+  $("menuBtn").onclick=()=>$("side").classList.toggle("open");
   $("login").classList.add("hidden");$("app").classList.remove("hidden");
   applyTheme(curTheme());
+  refreshChrome(staff);
   go("home");
 }
-function go(k){CUR=k;$("tabs").classList.remove("open");
-  $("tabs").querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.k===k));
-  try{ ({home:vHome,cabinet:vCabinet,project:vProject,lectures:vLectures,homework:vHomework,grades:vGrades,community:vCommunity,admin:vAdmin}[k]||vHome)(); }
-  catch(e){ $("view").innerHTML='<div class="errbar">Ошибка отображения вкладки: '+esc(e.message)+'</div>'; }}
-const view=h=>$("view").innerHTML=h;
+function renderNav(staff){
+  const groups=staff?[...NAV,STAFF]:NAV;
+  $("side").innerHTML=groups.map(([g,items],gi)=>
+    `<div class="grp${gi?' mt':''}">${g}</div>`+items.map(([k,l,icn])=>
+      `<button class="navitem" data-k="${k}"><span style="display:flex" data-icon="${k}">${ic(icn)}</span>${l}<span class="navbadge" id="badge_${k}" style="display:none"></span></button>`).join("")
+  ).join("")+`<div class="quota" id="quotaBox"></div>`;
+  $("side").querySelectorAll(".navitem").forEach(b=>b.onclick=()=>go(b.dataset.k));
+}
+async function refreshChrome(staff){
+  try{const u=await api("/api/my-usage");const wk=u.week||{};CHROME.tokensWeek=wk.tokens_used||0;CHROME.quotaPct=Math.round(wk.used_pct||0);}catch{}
+  try{const p=await api("/api/progress");CHROME.hwDue=Math.max(0,(p.assignments_total||0)-(p.accepted||0));}catch{}
+  const q=$("quotaBox");if(q)q.innerHTML=`<span class="mono" style="color:var(--ink1);font-weight:600">${fmtN(CHROME.tokensWeek)}</span> токенов за неделю<br><span style="color:var(--ink3)">квота ${CHROME.quotaPct}% · сброс в пн</span>`;
+  const hb=$("badge_homework");if(hb&&CHROME.hwDue){hb.style.display="";hb.style.background="var(--warn-bg)";hb.style.color="var(--warn)";hb.textContent=CHROME.hwDue;}
+  if(staff){try{const subs=await api("/api/admin/submissions");const pend=subs.filter(s=>s.status!=="accepted").length;const ab=$("badge_admin");if(ab&&pend){ab.style.display="";ab.style.background="var(--crit-bg)";ab.style.color="var(--crit)";ab.textContent=pend;}}catch{}}
+}
+function go(k){CUR=k;$("side").classList.remove("open");
+  $("side").querySelectorAll(".navitem").forEach(b=>b.classList.toggle("active",b.dataset.k===k));
+  const f={home:vHome,lectures:vLectures,homework:vHomework,project:vProject,grades:vGrades,community:vCommunity,cabinet:vCabinet,admin:vAdmin}[k]||vHome;
+  Promise.resolve().then(f).catch(e=>{$("view").innerHTML=`<div class="card" style="border-color:var(--warn);color:var(--warn)">Ошибка вкладки: ${esc(e.message)}</div>`;});
+}
+const view=h=>$("view").innerHTML=`<div class="view">${h}</div>`;
 
-// ── Views ──
-async function vCabinet(){
-  view(`<h2>Кабинет</h2><div id="c"></div>`);
-  let u={},s={},p={};
-  try{u=await api("/api/my-usage")}catch{} try{s=await api("/api/storage/my-files")}catch{} try{p=await api("/api/progress")}catch{}
-  const wk=u.week||{};
-  $("c").innerHTML=`
-   <div class="grid g3">
-     <div class="card"><div class="caps">Токены · неделя</div><div class="big">${fmtN(wk.tokens_used)}</div>
-       <div class="muted">из ${fmtN(wk.limit)} · осталось ${fmtN(wk.remaining)}</div>
-       <div class="bar"><i style="width:${Math.min(100,wk.used_pct||0)}%"></i></div></div>
-     <div class="card"><div class="caps">Хранилище</div><div class="big">${mb(s.used_bytes||0)}<span style="font-size:14px"> МБ</span></div>
-       <div class="muted">из ${mb(s.limit_bytes||629145600)} МБ</div>
-       <div class="bar"><i style="width:${Math.min(100,s.used_pct||0)}%"></i></div></div>
-     <div class="card"><div class="caps">Прогресс по домашкам</div><div class="big">${p.accepted||0}/${p.assignments_total||0}</div>
-       <div class="muted">принято · сдано ${p.submitted||0}</div></div>
-   </div>
-   <div class="card"><div class="caps">Стоимость за неделю</div>
-     <div class="row"><span class="muted">Потрачено</span><span class="mono">${(wk.cost_rub||0).toFixed(2)} ₽</span></div>
-     <div class="row"><span class="muted">Вызовов</span><span class="mono">${wk.calls||0}</span></div>
-     <div class="row"><span class="muted">Сессий на неделе</span><span class="mono">${(u.sessions_this_week||{}).opened||0} / ${(u.sessions_this_week||{}).limit||5}</span></div>
-   </div>
-   <div class="card"><div class="caps">Подключение OpenCode</div>
-     <div class="muted" style="margin-bottom:8px">Единственная точка доступа к моделям — курсовой MCP-шлюз.</div>
-     <div class="row"><span class="muted">MCP endpoint</span><span class="mono">https://mcp.engineer-ai.pro/mcp</span></div>
-     <div class="row"><span class="muted">Auth</span><span class="mono">Authorization: Bearer &lt;твой токен&gt;</span></div>
-     <div style="margin:10px 0"><button class="btn primary sm" onclick="copyToken()">${svg('copy',15)} Скопировать токен</button>
-       <span class="faint" style="margin-left:8px">короткоживущий — если MCP вернёт 401, зайди сюда и скопируй заново</span></div>
-     <ol style="margin:10px 0 0;padding-left:18px;color:var(--text-2);font-size:13px;line-height:1.9">
-       <li>Поставь OpenCode CLI (OSS, OpenAI-совместимый)</li>
-       <li>Пропиши MCP-сервер выше + заголовок Authorization</li>
-       <li>Скопируй стартовые скиллы из репозитория в клиент</li>
-       <li>Первый вызов — токены пойдут в журнал</li></ol>
-     <div style="margin-top:10px"><a href="https://github.com/mkhlsokolenko-ai/ai-product-engineer" target="_blank">Репозиторий курса и скиллы →</a></div></div>`;
-}
-let _lec=[], _asgW={}, _curWeek=0;
-async function vLectures(){
-  view(`<h2>Карта курса</h2><div id="l">Загрузка…</div>`);
-  const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
-  _lec=ls; _asgW={}; as.forEach(a=>{(_asgW[a.week]=_asgW[a.week]||[]).push(a);});
-  _curWeek=d.week||0;                        // 0 = курс ещё не начался
-  const cw=_curWeek, done=ls.filter(x=>cw&&x.week<cw).length;
-  const nBlocks=[...new Set(ls.map(x=>x.block))].length;
-  let h=`<div class="card">
-     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-       <div><div class="caps" style="margin:0">Пройдено лекций</div><div class="big" style="font-size:24px">${done} <span class="muted" style="font-size:13px">/ ${ls.length}</span></div></div>
-       <div style="flex:1;min-width:160px"><div class="bar" style="height:8px"><i style="width:${ls.length?Math.round(100*done/ls.length):0}%"></i></div>
-         <div class="faint" style="margin-top:6px">${ls.length} лекций · ${nBlocks} блока · ${as.length} заданий · 15 недель</div></div>
-       <span class="badge b-blue">${cw?("идёт неделя "+cw):"курс ещё не начался"}</span></div>
-     <div class="faint" style="margin-top:10px">Нажми на лекцию — раскроются цели, навыки и связанное задание.</div></div>`;
-  let blk=null;
-  ls.forEach(x=>{
-    if(x.block!==blk){blk=x.block;h+=`<div class="lecblock">БЛОК ${blk} · ${esc(x.block_name||"")}</div>`;}
-    const st=cw&&x.week<cw?"past":cw&&x.week===cw?"now":"soon";
-    const mark=st==="past"?'<span class="badge b-ok">✓ пройдено</span>':st==="now"?'<span class="badge b-warn">● сейчас</span>':'';
-    const open=st==="now";
-    h+=`<div class="card"${st==="now"?' style="border-color:var(--accent-border);background:var(--accent-bg)"':st==="past"?' style="opacity:.78"':''}>
-      <div role="button" tabindex="0" onclick="toggleLec(${x.week})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleLec(${x.week})}" aria-expanded="${open}" style="cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <span class="badge b-blue">нед. ${x.week}</span><b>${esc(x.title)}</b>
-        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">${mark}<span class="faint" id="chev${x.week}">${open?"▲":"▼"}</span></span></div>
-      <div class="muted" style="margin-top:6px">${esc(x.topic)}</div>
-      <div id="det${x.week}"${open?"":' style="display:none"'}>${lecDetail(x)}</div></div>`;});
-  $("l").innerHTML=h||"<div class='muted'>Пока пусто</div>";
-}
-function lecDetail(x){
-  const outs=x.outcomes||[], sk=(x.skills||[]).filter(Boolean), asg=_asgW[x.week]||[];
-  return `<div style="margin-top:12px;border-top:1px solid var(--border-1);padding-top:12px">
-    ${outs.length?`<div class="caps">Чему научишься</div><ul style="margin:6px 0 14px;padding:0;list-style:none">
-      ${outs.map(o=>`<li style="padding:3px 0;color:var(--text-2)"><span style="color:var(--ok)">✓</span> ${esc(o)}</li>`).join("")}</ul>`:""}
-    ${sk.length?`<div class="caps">Навыки · скиллы</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px">
-      ${sk.map(s=>`<span class="badge mono" style="background:var(--bg-2);color:var(--text-1)">${esc(s)}</span>`).join("")}</div>`:""}
-    ${asg.length?`<div class="caps">Связанное задание</div>${asg.map(a=>`<div class="card" style="background:var(--bg-2);margin:6px 0 0">
-        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b>${esc(a.title)}</b><span class="faint mono">${a.fmt} · до ${a.max_score} б.</span></div>
-        <div class="muted" style="margin:4px 0">${esc(a.description)}</div>
-        <a href="#" onclick="go('homework');return false">Открыть в Заданиях →</a></div>`).join("")}`:""}
-    <div style="margin-top:12px">${x.materials_url
-      ?`<a href="${esc(x.materials_url)}" target="_blank">📄 Материалы лекции →</a>`
-      :'<span class="faint">Материалы появятся ближе к лекции</span>'}</div>
-  </div>`;
-}
-function toggleLec(w){const d=$("det"+w),c=$("chev"+w);if(!d)return;
-  const open=d.style.display==="none";d.style.display=open?"block":"none";if(c)c.textContent=open?"▲":"▼";}
-async function vHomework(){
-  view(`<h2>Домашние задания</h2><div id="h">Загрузка…</div>`);
-  const [as,subs]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/submissions").catch(()=>({}))]);
-  const grades=await api("/api/my/grades").catch(()=>({}));
-  $("h").innerHTML=as.map(a=>{
-    const s=subs[a.id], g=grades[a.id];
-    const st=s?(s.status==="accepted"?`<span class="badge b-ok">принято</span>`:s.status==="revise"?`<span class="badge b-warn">на доработку</span>`:`<span class="badge b-blue">сдано</span>`):`<span class="badge" style="background:var(--bg-2);color:var(--text-3)">не сдано</span>`;
-    return `<div class="card">
-      <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
-        <span class="badge b-blue">нед. ${a.week}</span><b>${esc(a.title)}</b>
-        <span class="faint mono">${a.fmt} · до ${a.max_score} б.</span><span style="margin-left:auto">${st}</span></div>
-      <div class="muted" style="margin:8px 0">${esc(a.description)}</div>
-      ${g&&g.score!=null?`<div class="card" style="background:var(--ok-bg);border-color:var(--ok);margin:8px 0">
-         <b style="color:var(--ok)">Оценка: ${g.score} / ${a.max_score}</b>${g.feedback?`<div class="muted" style="margin-top:4px">${esc(g.feedback)}</div>`:""}</div>`:""}
-      <label>Ссылка на сдачу (repo / PR / .md в репозитории)</label>
-      <input id="u${a.id}" placeholder="https://github.com/..." value="${s?esc(s.url):""}">
-      <label>Комментарий (необязательно)</label>
-      <input id="n${a.id}" value="${s?esc(s.note):""}">
-      <div style="margin-top:10px"><button class="btn primary sm" onclick="submitHw(${a.id})">${s?"Обновить сдачу":"Сдать"}</button></div>
-    </div>`;}).join("")||"<div class='muted'>Пока пусто</div>";
-}
-async function submitHw(id){
-  const url=$("u"+id).value.trim(); if(!url)return alert("Укажи ссылку на сдачу");
-  await api("/api/my/submissions",{method:"POST",body:JSON.stringify({assignment_id:id,url,note:$("n"+id).value})});
-  vHomework();
-}
-async function vGrades(){
-  view(`<h2>Оценки</h2><div id="g">Загрузка…</div>`);
-  const [as,grades,d]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/grades").catch(()=>({})),api("/api/dashboard").catch(()=>({}))]);
-  let tot=0,max=0;
-  const rows=as.map(a=>{const g=grades[a.id];if(g&&g.score!=null){tot+=Number(g.score);max+=a.max_score;}
-    return `<tr><td>нед. ${a.week}</td><td>${esc(a.title)}</td><td class="mono">${g&&g.score!=null?g.score+" / "+a.max_score:"—"}</td><td class="muted">${g?esc(g.feedback||""):""}</td></tr>`;}).join("");
-  $("g").innerHTML=`
-    <div class="card"><div class="caps">Достижения</div><div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
-      ${(d.achievements||[]).map(a=>`<div style="text-align:center;opacity:${a.earned?1:.3};min-width:62px"><div style="font-size:26px">${a.earned?a.icon:"🔒"}</div><div class="faint" style="font-size:10px">${esc(a.title)}</div></div>`).join("")||'<span class="muted">—</span>'}</div></div>
-    <div class="card"><div class="caps">Итого баллов</div><div class="big">${tot} <span style="font-size:14px" class="muted">/ ${max||"—"}</span></div></div>
-    <div class="card"><table><tr><th>Неделя</th><th>Задание</th><th>Оценка</th><th>Фидбэк</th></tr>${rows}</table></div>`;
-}
-function leaderChart(board){
-  const top=board.slice(0,8); if(!top.length)return '<div class="muted">Нет данных для графика</div>';
-  const me=(CLAIMS.preferred_username||CLAIMS.name), max=Math.max(...top.map(r=>r.tokens),1);
-  const rh=30, w=560, pad=112, bw=w-pad-40;
-  const h=top.length*rh+10;
-  const bars=top.map((r,i)=>{const y=i*rh+6, len=Math.max(3,Math.round(bw*r.tokens/max)), mine=r.username===me;
-    return `<text x="0" y="${y+13}" font-size="12" fill="var(--text-2)" font-family="var(--font-ui)">${esc(r.username.slice(0,13))}</text>
-      <rect x="${pad}" y="${y+2}" width="${len}" height="16" rx="4" fill="${mine?'var(--accent)':'var(--accent-border)'}"></rect>
-      <text x="${pad+len+6}" y="${y+13}" font-size="11" fill="var(--text-3)" font-family="var(--font-mono)">${fmtN(r.tokens)}</text>`;}).join("");
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;height:auto">${bars}</svg>`;
-}
-async function vCommunity(){
-  view(`<h2>Сообщество</h2><div id="cm">Загрузка…</div>`);
-  const [board,anns]=await Promise.all([api("/api/leaderboard").catch(()=>[]),api("/api/announcements").catch(()=>[])]);
-  const me=(CLAIMS.preferred_username||CLAIMS.name);
-  $("cm").innerHTML=`
-   <div class="card"><div class="caps">Анонсы лектора</div>
-     ${anns.length?anns.map(a=>`<div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><b>${esc(a.title)}</b>
-       <div class="muted">${esc(a.body)}</div><div class="faint" style="font-size:10.5px">${esc(a.by||"")}</div></div>`).join(""):`<div class="muted">Пока нет анонсов</div>`}</div>
-   <div class="card"><div class="caps">Лидерборд · неделя · топ-8</div>
-     <div class="faint" style="margin-bottom:10px">По объёму работы с моделями за текущую неделю. Твой бар — акцентный.</div>
-     ${leaderChart(board)}</div>
-   <div class="card"><div class="caps">Полная таблица</div>
-     <table><tr><th>#</th><th>Студент</th><th>Токены</th><th>Стоимость</th></tr>
-     ${board.map((r,i)=>{const mine=r.username===me;
-       return `<tr${mine?' style="background:var(--accent-bg)"':''}><td class="mono">${i+1}</td><td>${esc(r.username)}${mine?' <span class="chip info" style="font-size:9.5px">ты</span>':''}</td><td class="mono">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(2)} ₽</td></tr>`;}).join("")||`<tr><td colspan=4 class="muted">Нет данных</td></tr>`}</table></div>`;
-}
-// ─────────────── Командный центр лектора ───────────────
-let _adm={sub:"students"};
-const ADM_SUBS=[["students","Студенты"],["kt","КТ и оценки"],["partners","Партнёры"],["calendar","Календарь"],["signals","Сигналы"],["materials","Материалы"],["notes","Заметки"],["announce","Анонсы"]];
-const admB=h=>$("admBody").innerHTML=h;
-const ktPct=s=>{const v=(s.kt||[]).filter(k=>k.score!=null).map(k=>100*k.score/k.max);return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null;};
-function ktPill(k){ if(k.score==null)return `<span class="kt" style="background:var(--bg-2);color:var(--text-3)" title="${esc(k.title)}">—</span>`;
-  const p=100*k.score/k.max, c=p>=60?'var(--ok-bg)':p>=40?'var(--warn-bg)':'var(--crit-bg)', f=p>=60?'var(--ok)':p>=40?'var(--warn)':'var(--crit)';
-  return `<span class="kt" style="background:${c};color:${f}" title="${esc(k.title)}: ${k.score}/${k.max}">${k.score}</span>`;}
-function partnerName(pid){if(pid==null||pid==="")return '<span class="faint">своя идея</span>';const p=(_adm.partners||[]).find(p=>String(p.id)===String(pid));return p?esc(p.name):"—";}
-
-async function vAdmin(){
-  view(`<h2 style="margin-bottom:4px">Командный центр</h2>
-    <div class="faint" style="margin-bottom:16px">AI Product Engineer · управление группой</div>
-    <div class="tiles" id="admTiles"></div>
-    <div class="subtabs" id="admSubs"></div>
-    <div id="admBody" class="muted">Загрузка…</div>`);
-  $("admSubs").innerHTML=ADM_SUBS.map(([k,l])=>`<button class="subtab" data-s="${k}">${l}</button>`).join("");
-  $("admSubs").querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{_adm.sub=b.dataset.s;paintAdm();});
-  const [roster,partners,cal,d]=await Promise.all([
-    api("/api/admin/roster").catch(()=>({students:[],assignments:[]})),
-    api("/api/admin/partners").catch(()=>[]),
-    api("/api/admin/calendar").catch(()=>[]),
-    api("/api/dashboard").catch(()=>({}))]);
-  _adm.roster=roster; _adm.partners=partners; _adm.cal=cal; _adm.dash=d;
-  const st=roster.students||[], risk=st.filter(s=>s.risk_note).length, cost=st.reduce((a,s)=>a+(s.cost_rub||0),0);
-  const pcts=st.map(ktPct).filter(x=>x!=null), avg=pcts.length?Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length)+"%":"—";
-  $("admTiles").innerHTML=[
-    ["Студентов",st.length],["Партнёров",partners.length],["Средний балл",avg],
-    ["В зоне риска",`<span style="color:var(--crit)">${risk}</span>`],
-    ["Cost · неделя",cost.toFixed(0)+" ₽"],["Прогресс курса",(d.week?Math.round(100*d.week/(d.weeks||15)):0)+"%"]
-  ].map(([l,v])=>`<div class="tile"><div class="t-l">${l}</div><div class="t-v">${v}</div></div>`).join("");
-  paintAdm();
-}
-function paintAdm(){
-  $("admSubs").querySelectorAll(".subtab").forEach(b=>b.classList.toggle("on",b.dataset.s===_adm.sub));
-  ({students:admStudents,kt:admKt,partners:admPartners,calendar:admCalendar,signals:admSignals,materials:admMaterials,notes:admNotes,announce:admAnnounce}[_adm.sub]||admStudents)();
-}
-// — Студенты (inline-правка партнёра/недели/риска; КТ read-only) —
-function admStudents(){
-  const st=_adm.roster.students||[], as=_adm.roster.assignments||[];
-  admB(`<div class="card" style="padding:0;overflow-x:auto">
-    <table><thead><tr><th>Студент</th><th>Проект</th><th>Партнёр</th><th>Нед.</th>
-      <th>КТ (${as.length})</th><th>Cost·нед</th><th>Риск</th></tr></thead><tbody>
-    ${st.map(s=>`<tr>
-      <td><b>${esc(s.username)}</b><div class="faint mono" style="font-size:10px">${fmtN(s.tokens)} тк · ${s.accepted}/${s.submitted} принято</div></td>
-      <td class="muted">${esc(s.project||"—")} ${s.status?`<span class="chip info" style="font-size:9.5px">${esc(s.status)}</span>`:""}</td>
-      <td><select class="ie" id="pt_${s.student_id}" onchange="saveMeta('${s.student_id}')">
-        <option value="">— своя идея —</option>
-        ${(_adm.partners||[]).map(p=>`<option value="${p.id}"${String(p.id)===String(s.partner_id)?' selected':''}>${esc(p.name)}</option>`).join("")}</select></td>
-      <td><input class="ie" id="wk_${s.student_id}" type="number" min="1" max="15" style="width:52px" value="${s.week!=null?s.week:""}" onchange="saveMeta('${s.student_id}')"></td>
-      <td style="white-space:nowrap">${(s.kt||[]).map(ktPill).join("")}</td>
-      <td class="mono">${(s.cost_rub||0).toFixed(1)} ₽</td>
-      <td><input class="ie" id="rk_${s.student_id}" placeholder="нет" value="${esc(s.risk_note||"")}" onchange="saveMeta('${s.student_id}')" style="min-width:120px"></td>
-    </tr>`).join("")||`<tr><td colspan="7" class="muted" style="padding:20px">Пока нет активных студентов. Появятся после первого входа и вызова MCP.</td></tr>`}
-    </tbody></table></div>
-    <div style="margin-top:12px"><button class="btn primary sm" onclick="addStudentModal()">+ Добавить студента вручную</button>
-    <span class="faint" style="margin-left:8px">обычно ростер наполняется сам — по логинам и вызовам</span></div>`);
-}
-async function saveMeta(sid){
-  const pid=$("pt_"+sid).value, wk=$("wk_"+sid).value, rk=$("rk_"+sid).value;
-  await api("/api/admin/student-meta",{method:"POST",body:JSON.stringify({student_id:sid,partner_id:pid?parseInt(pid):null,track_week:wk?parseInt(wk):null,risk_note:rk})});
-  const s=(_adm.roster.students||[]).find(x=>x.student_id===sid); if(s){s.partner_id=pid?parseInt(pid):null;s.week=wk?parseInt(wk):null;s.risk_note=rk;}
-}
-function addStudentModal(){ showModal(`<h2>Добавить студента</h2>
-  <div class="fld"><label>Имя / логин</label><input id="asN" placeholder="ivan"></div>
-  <div class="fld"><label>Партнёр</label><select id="asP"><option value="">— своя идея —</option>
-    ${(_adm.partners||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></div>
-  <div class="mact"><button class="btn primary" onclick="addStudent()">Добавить</button><button class="btn" onclick="closeModal()">Отмена</button></div>`);}
-async function addStudent(){const n=$("asN").value.trim();if(!n)return alert("Имя обязательно");
-  const pid=$("asP").value;
-  await api("/api/admin/student-meta",{method:"POST",body:JSON.stringify({student_id:"m_"+n.toLowerCase().replace(/[^a-z0-9]+/g,"_"),username:n,partner_id:pid?parseInt(pid):null})});
-  closeModal();vAdmin();}
-// — КТ и оценки: статистика + проверка сдач —
-async function admKt(){
-  const as=_adm.roster.assignments||[], st=_adm.roster.students||[];
-  const cards=as.map(a=>{const sc=st.map(s=>(s.kt.find(k=>k.assignment_id===a.id)||{}).score).filter(x=>x!=null);
-    const avg=sc.length?Math.round(sc.reduce((x,y)=>x+y,0)/sc.length*10)/10:null;
-    const pass=sc.filter(x=>x>=0.6*a.max).length, strug=st.filter(s=>{const k=s.kt.find(k=>k.assignment_id===a.id);return k&&k.score!=null&&k.score<0.6*a.max;});
-    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline">
-      <b>нед.${a.week} · ${esc(a.title)}</b><span class="faint">${sc.length}/${st.length} оценено</span></div>
-      <div class="tiles" style="margin:12px 0 0">
-        <div class="tile"><div class="t-l">Средний</div><div class="t-v">${avg!=null?avg+"/"+a.max:"—"}</div></div>
-        <div class="tile"><div class="t-l">Прошли (60%+)</div><div class="t-v">${pass}</div></div>
-        <div class="tile"><div class="t-l">На доработку</div><div class="t-v" style="color:${strug.length?'var(--warn)':'inherit'}">${strug.length}</div></div></div>
-      ${strug.length?`<div class="muted" style="margin-top:10px"><b>Нужна помощь:</b> ${strug.map(s=>esc(s.username)+" ("+s.kt.find(k=>k.assignment_id===a.id).score+")").join(", ")}</div>`:""}</div>`;}).join("");
-  admB(`<div id="ktStat">${cards||'<div class="muted">Нет заданий</div>'}</div>
-    <h3 style="margin:22px 0 10px" id="subsH">Проверка сдач</h3><div id="subsBox" class="muted">Загрузка…</div>`);
-  const subs=await api("/api/admin/submissions").catch(()=>[]);
-  const pend=subs.filter(s=>s.status!=="accepted").length;
-  $("subsH").innerHTML=`Проверка сдач ${subs.length?`<span class="chip ${pend?'doing':'done'}">${pend?pend+" ждут":"все проверены"}</span>`:""}`;
-  $("subsBox").innerHTML=subs.map(s=>`<div class="card">
-     <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b>${esc(s.username)}</b>
-       <span class="muted">${esc(s.assignment)}</span>
-       <span class="chip ${s.status==='accepted'?'done':s.status==='revise'?'risk':'info'}">${esc(s.status)}</span>
-       <a style="margin-left:auto" href="${esc(s.url)}" target="_blank">открыть сдачу →</a></div>
-     ${s.note?`<div class="muted" style="margin-top:6px">${esc(s.note)}</div>`:""}
-     <div class="grid g3" style="margin-top:10px">
-       <div><label>Балл</label><input id="sc_${s.student_id}_${s.assignment_id}" type="number" value="${s.score!=null?s.score:""}"></div>
-       <div><label>Статус</label><select id="stt_${s.student_id}_${s.assignment_id}">
-         <option value="accepted"${s.status==='accepted'?' selected':''}>принято</option>
-         <option value="revise"${s.status==='revise'?' selected':''}>на доработку</option>
-         <option value="submitted"${s.status==='submitted'?' selected':''}>сдано</option></select></div>
-       <div style="display:flex;align-items:flex-end"><button class="btn primary" style="width:100%" onclick="gradeHw('${s.student_id}',${s.assignment_id})">Сохранить</button></div></div>
-     <label>Фидбэк</label><input id="fb_${s.student_id}_${s.assignment_id}" value="${esc(s.feedback||'')}">
-   </div>`).join("")||"<div class='muted'>Сдач пока нет</div>";
-}
-async function gradeHw(sid,aid){
-  const score=parseFloat($("sc_"+sid+"_"+aid).value); if(isNaN(score))return alert("Укажи балл");
-  await api("/api/admin/grade",{method:"POST",body:JSON.stringify({student_id:sid,assignment_id:aid,score,status:$("stt_"+sid+"_"+aid).value,feedback:$("fb_"+sid+"_"+aid).value})});
-  const r=await api("/api/admin/roster").catch(()=>_adm.roster); _adm.roster=r; admKt();
-}
-// — Партнёры —
-function admPartners(){
-  const ps=_adm.partners||[], st=_adm.roster.students||[];
-  admB(`<div class="grid g2">${ps.map(p=>{const ss=st.filter(s=>String(s.partner_id)===String(p.id));
-    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px">
-      <div><b>${esc(p.name)}</b><div class="faint">${esc(p.contact||"")}${p.email?" · "+esc(p.email):""}</div></div>
-      <div style="display:flex;gap:6px;align-items:center"><span class="chip ${p.status==='active'?'done':'todo'}">${esc(p.status)}</span>
-        <button class="iconbtn" style="width:26px;height:26px;font-size:12px" onclick="delPartner(${p.id})">×</button></div></div>
-      <div class="faint" style="margin:10px 0 4px">Студенты (${ss.length}):</div>
-      ${ss.map(s=>`<div class="row" style="padding:5px 0"><span>${esc(s.username)} — ${esc(s.project||"—")}</span><span class="faint">нед ${s.week||"?"}</span></div>`).join("")||'<div class="faint">пока никого</div>'}
-      ${p.notes?`<div class="muted" style="margin-top:10px;font-style:italic">${esc(p.notes)}</div>`:""}</div>`;}).join("")||'<div class="muted">Партнёров пока нет</div>'}</div>
-    <div style="margin-top:12px"><button class="btn primary sm" onclick="addPartnerModal()">+ Добавить партнёра</button></div>`);
-}
-function addPartnerModal(){showModal(`<h2>Новый партнёр</h2>
-  <div class="fld"><label>Название</label><input id="pN" placeholder="ООО Компания"></div>
-  <div class="fld"><label>Контакт (имя, роль)</label><input id="pC" placeholder="Иван Иванов, CTO"></div>
-  <div class="fld"><label>Email</label><input id="pE" placeholder="i@company.com"></div>
-  <div class="fld"><label>Заметки</label><textarea id="pNo" rows="3" placeholder="условия, доступ к данным, частота встреч"></textarea></div>
-  <div class="mact"><button class="btn primary" onclick="addPartner()">Добавить</button><button class="btn" onclick="closeModal()">Отмена</button></div>`);}
-async function addPartner(){const n=$("pN").value.trim();if(!n)return alert("Название обязательно");
-  await api("/api/admin/partners",{method:"POST",body:JSON.stringify({name:n,contact:$("pC").value,email:$("pE").value,notes:$("pNo").value})});
-  _adm.partners=await api("/api/admin/partners").catch(()=>_adm.partners);closeModal();paintAdm();}
-async function delPartner(id){if(!confirm("Удалить партнёра? Студенты потеряют связь."))return;
-  await api("/api/admin/partners/"+id,{method:"DELETE"});_adm.partners=await api("/api/admin/partners").catch(()=>[]);
-  _adm.roster=await api("/api/admin/roster").catch(()=>_adm.roster);paintAdm();}
-// — Календарь —
-function admCalendar(){
-  const cw=_adm.dash.week||0;
-  admB(`${(_adm.cal||[]).map(e=>{const past=e.week<cw,now=e.week===cw;const ico={kt:"◆",guest:"★",partner:"🤝",final:"🏁"}[e.type]||"•";
-    return `<div class="card" style="display:grid;grid-template-columns:64px 74px 1fr auto auto;gap:12px;align-items:center;${past?'opacity:.6':''}${now?';border-color:var(--accent-border);background:var(--accent-bg)':''}">
-      <span class="faint">нед ${e.week}</span><span class="muted">${esc(e.date)}</span>
-      <span>${ico} ${esc(e.title)}</span>
-      <span class="chip ${past?'done':now?'doing':'todo'}">${past?'прошло':now?'сейчас':'впереди'}</span>
-      <button class="iconbtn" style="width:26px;height:26px;font-size:12px" onclick="delEvent(${e.id})">×</button></div>`;}).join("")||'<div class="muted">Событий нет</div>'}
-    <div style="margin-top:12px"><button class="btn primary sm" onclick="addEventModal()">+ Добавить событие</button></div>`);
-}
-function addEventModal(){showModal(`<h2>Новое событие</h2>
-  <div class="fld"><label>Неделя (1–15)</label><input id="eW" type="number" min="1" max="15" placeholder="8"></div>
-  <div class="fld"><label>Название</label><input id="eT" placeholder="Гостевая лекция"></div>
-  <div class="fld"><label>Дата (необязательно, иначе посчитается)</label><input id="eD" placeholder="21 ноя"></div>
-  <div class="fld"><label>Тип</label><select id="eTy"><option value="kt">Контрольная точка</option><option value="guest">Гость</option><option value="partner">Партнёр</option><option value="final">Финал</option></select></div>
-  <div class="mact"><button class="btn primary" onclick="addEvent()">Добавить</button><button class="btn" onclick="closeModal()">Отмена</button></div>`);}
-async function addEvent(){const w=parseInt($("eW").value);if(!w)return alert("Неделя обязательна");
-  await api("/api/admin/calendar",{method:"POST",body:JSON.stringify({week:w,title:$("eT").value,date_label:$("eD").value,type:$("eTy").value})});
-  _adm.cal=await api("/api/admin/calendar").catch(()=>_adm.cal);closeModal();paintAdm();}
-async function delEvent(id){await api("/api/admin/calendar/"+id,{method:"DELETE"});_adm.cal=await api("/api/admin/calendar").catch(()=>[]);paintAdm();}
-// — Сигналы (авто) —
-function admSignals(){
-  const st=_adm.roster.students||[], cw=_adm.dash.week||0, sig=[];
-  st.forEach(s=>{
-    if(s.risk_note)sig.push(["risk",s.username,s.risk_note]);
-    const pct=100*(s.tokens||0)/25000000; if(pct>80)sig.push(["cost",s.username,`Израсходовано ${Math.round(pct)}% недельной квоты токенов`]);
-    (s.kt||[]).forEach(k=>{if(k.score!=null&&k.score<0.6*k.max)sig.push(["kt",s.username,`${k.title}: ${k.score}/${k.max} — нужна доработка`]);});
-    if(s.week!=null&&cw&&s.week<cw-1)sig.push(["late",s.username,`Отстаёт на ${cw-s.week} нед по плану`]);
-  });
-  admB(sig.length?sig.map(([t,who,msg])=>`<div class="signal">
-      <span class="dot" style="background:${t==='risk'||t==='late'?'var(--crit)':'var(--warn)'}"></span>
-      <div><b>${esc(who)}</b><div class="muted">${esc(msg)}</div></div></div>`).join("")
-    :'<div class="card" style="text-align:center;padding:34px" class="muted">Всё в норме · рисков нет 🎉</div>');
-}
-// — Материалы (drag-and-drop) —
-async function admMaterials(){
-  admB(`<div class="card"><div class="caps">Загрузка материалов</div>
-     <div class="dropzone" id="matDrop"><span class="dz-ic">${svg('upload',26)}</span>Перетащи файлы сюда или нажми<br>
-       <span class="faint">PDF/PPTX/MD/ZIP — публичны для студентов</span><input type="file" id="matIn" multiple style="display:none"></div>
-     <div id="matMsg" class="faint" style="margin-top:8px"></div></div>
-   <div id="matList" class="muted">Загрузка…</div>`);
-  wireDrop($("matDrop"),$("matIn"),admDoUpload);
-  await refreshMaterials();
-}
-async function refreshMaterials(){
-  const ms=await api("/api/admin/materials").catch(()=>[]);
-  $("matList").innerHTML=`<div class="card" style="padding:0;overflow-x:auto"><table><thead><tr><th>Файл</th><th>Размер</th><th>Привязать к неделе</th><th></th></tr></thead><tbody>
-   ${ms.map(m=>`<tr><td><a href="${esc(m.url)}" target="_blank">${esc(m.name)}</a></td><td class="mono">${mb(m.size)} МБ</td>
-     <td><select class="ie" id="mw_${esc(m.name)}" style="width:80px"><option value="">—</option>${Array.from({length:15},(_,i)=>`<option value="${i+1}">нед ${i+1}</option>`).join("")}</select>
-       <button class="btn sm" onclick="attachMaterial('${esc(m.name)}','${esc(m.url)}')">привязать</button></td>
-     <td style="text-align:right"><a href="#" style="color:var(--crit)" onclick="delMaterial('${esc(m.name)}');return false">удалить</a></td></tr>`).join("")||`<tr><td colspan="4" class="muted">Материалов нет</td></tr>`}
-   </tbody></table></div>`;
-}
-async function admDoUpload(files){
-  const msg=$("matMsg");
-  for(const f of files){ msg.textContent="Загрузка "+f.name+"…";
-    try{ const r=await api("/api/admin/material-upload-url?filename="+encodeURIComponent(f.name),{method:"POST"});
-      const put=await fetch(r.url,{method:"PUT",body:f}); if(!put.ok)throw new Error("S3 "+put.status);
-    }catch(e){ msg.textContent="Ошибка: "+e; return; } }
-  msg.textContent="Готово ✓"; refreshMaterials();
-}
-async function attachMaterial(name,url){const w=$("mw_"+name).value;if(!w)return alert("Выбери неделю");
-  await api("/api/admin/lecture-material",{method:"POST",body:JSON.stringify({week:parseInt(w),url})});
-  $("matMsg").textContent=`«${name}» привязан к неделе ${w} ✓`;}
-async function delMaterial(name){if(!confirm("Удалить "+name+"?"))return;
-  await api("/api/admin/material?filename="+encodeURIComponent(name),{method:"DELETE"});refreshMaterials();}
-// — Заметки —
-async function admNotes(){
-  admB(`<div class="card"><div class="caps">Личные заметки лектора</div>
-    <textarea id="lnotes" rows="16" style="margin-top:8px" placeholder="Планы, наблюдения по студентам, идеи к лекциям…"></textarea>
-    <div style="margin-top:8px"><button class="btn primary sm" onclick="saveNotes()">Сохранить</button><span id="nMsg" class="faint" style="margin-left:8px"></span></div></div>`);
-  const n=await api("/api/admin/notes").catch(()=>({body:""})); $("lnotes").value=n.body||"";
-}
-async function saveNotes(){await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nMsg").textContent="сохранено ✓";}
-// — Анонсы —
-async function admAnnounce(){
-  admB(`<div class="card"><div class="caps">Новый анонс</div>
-     <label>Заголовок</label><input id="annT" placeholder="Напр.: Лекция 4 перенесена">
-     <label>Текст</label><textarea id="annB" rows="3" placeholder="Появится на Главной и в Сообществе у всех студентов"></textarea>
-     <div style="margin-top:10px"><button class="btn primary sm" onclick="postAnn()">Опубликовать</button></div></div>
-   <div class="card"><div class="caps">Опубликованные</div><div id="annList" class="muted">Загрузка…</div></div>`);
-  const anns=await api("/api/announcements").catch(()=>[]);
-  $("annList").innerHTML=anns.map(a=>`<div class="row"><span><b>${esc(a.title)}</b> <span class="muted">${esc(a.body)}</span></span><span class="faint">${esc(a.by||"")}</span></div>`).join("")||'<div class="muted">Пока нет</div>';
-}
-async function postAnn(){if(!$("annT").value.trim())return alert("Заголовок пуст");
-  await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value})});
-  admAnnounce();}
-// модалка + drag-drop helper
-function showModal(h){$("modalHost").innerHTML=`<div class="backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${h}</div></div>`;}
-function closeModal(){$("modalHost").innerHTML="";}
-function wireDrop(zone,input,onFiles){ if(!zone)return;
-  zone.onclick=()=>input.click(); input.onchange=()=>{if(input.files.length)onFiles([...input.files]);};
-  zone.ondragover=e=>{e.preventDefault();zone.classList.add("over");};
-  zone.ondragleave=()=>zone.classList.remove("over");
-  zone.ondrop=e=>{e.preventDefault();zone.classList.remove("over");if(e.dataTransfer.files.length)onFiles([...e.dataTransfer.files]);};
-}
-
-function progressRing(pct){pct=Math.max(0,Math.min(100,Math.round(pct)));const r=34,c=2*Math.PI*r,off=c*(1-pct/100);
-  return `<svg width="92" height="92" viewBox="0 0 92 92" style="flex-shrink:0" role="img" aria-label="Прогресс курса ${pct}%">
-    <circle cx="46" cy="46" r="${r}" fill="none" stroke="var(--bg-inset)" stroke-width="8"/>
-    <circle cx="46" cy="46" r="${r}" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round"
-      stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 46 46)"/>
-    <text x="46" y="51" text-anchor="middle" font-family="var(--font-mono)" font-size="18" font-weight="700" fill="var(--accent)">${pct}%</text></svg>`;}
+// ══════════════ Главная ══════════════
+function ring(pct){pct=Math.max(0,Math.min(100,Math.round(pct)));const dash=(2*Math.PI*34*pct/100).toFixed(1)+" 999";
+  return `<div style="position:relative;width:96px;height:96px;flex-shrink:0" role="img" aria-label="Прогресс ${pct}%">
+    <svg width="96" height="96" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34" fill="none" stroke="var(--inset)" stroke-width="8"/><circle cx="40" cy="40" r="34" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dash}" transform="rotate(-90 40 40)" style="transition:stroke-dasharray .3s"/></svg>
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:18px">${pct}%</div></div>`;}
 async function vHome(){
-  view(`<div id="dash">Загрузка…</div>`);
+  view(`<h2>Главная</h2><div id="dash" class="faint">Загрузка…</div>`);
   const d=await api("/api/dashboard").catch(()=>({}));
   const cl=d.current_lecture||{}, nd=d.next_deadline;
+  const ach=(d.achievements||[]).map(a=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--b1);border-radius:10px;background:${a.earned?'transparent':'var(--bg2)'};opacity:${a.earned?1:.5}">
+     <span style="font-size:18px">${a.earned?a.icon:'🔒'}</span>
+     <div style="min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title)}</div><div style="font-size:11px;color:var(--ink3)">${a.earned?'получено':'заблокировано'}</div></div></div>`).join("");
+  const onb=(d.onboarding||[]);const onbDone=onb.filter(o=>o.done).length;
+  const onbHtml=onb.map(o=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:${o.done?'transparent':'var(--bg2)'}">
+     <span style="width:18px;height:18px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:${o.done?'var(--ok-bg)':'var(--bg1)'};color:${o.done?'var(--ok)':'var(--ink3)'};flex-shrink:0">${o.done?'✓':''}</span>
+     <span style="font-size:13.5px;color:${o.done?'var(--ink3)':'var(--ink1)'};flex:1">${esc(o.title)}</span></div>`).join("");
+  const anns=(d.announcements||[]);
   $("dash").innerHTML=`
-   <div class="card" style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-     ${progressRing(d.progress_pct||0)}
-     <div style="flex:1;min-width:200px">
-       <div class="faint">${d.week?("Неделя "+d.week+" из "+d.weeks):"Курс скоро стартует"}</div>
-       <b style="font-size:19px;display:block;margin:2px 0 6px">Привет, ${esc(d.student||"студент")} 👋</b>
-       <div class="muted">Продолжай с текущей лекции: <b style="color:var(--text-1)">${esc(cl.title||"—")}</b></div>
-       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-         <button class="btn primary sm" onclick="go('lectures')">Продолжить обучение →</button>
-         ${nd?`<button class="btn sm" onclick="go('homework')">К заданию · ${esc(nd.title)}</button>`:""}</div>
-     </div></div>
-   <div class="grid g2">
-     <div class="card"><div class="caps">Текущая лекция</div><b>${esc(cl.title||"—")}</b>
-       <div class="muted" style="margin-top:4px">${esc(cl.topic||"")}</div>
-       <div style="margin-top:10px"><a href="#" onclick="go('lectures');return false">Программа курса →</a></div></div>
-     <div class="card"${nd&&nd.days_left<=2?' style="border-color:var(--warn)"':''}><div class="caps">Ближайший дедлайн</div>
-       ${nd?`<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b>${esc(nd.title)}</b>
-         <span class="badge ${nd.days_left<=2?'b-warn':nd.days_left<=5?'b-blue':'b-ok'}">${nd.days_left<=0?'сегодня':'через '+nd.days_left+' дн'}</span></div>
-         <div class="muted" style="margin-top:4px">неделя ${nd.week}</div>
-         <div style="margin-top:10px"><a href="#" onclick="go('homework');return false">К заданиям →</a></div>`:`<div class="muted">Нет открытых дедлайнов 🎉</div>`}</div></div>
-   <div class="card"><div class="caps">Достижения</div>
-     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
-       ${(d.achievements||[]).map(a=>`<div style="text-align:center;opacity:${a.earned?1:.3};min-width:62px">
-         <div style="font-size:28px">${a.earned?a.icon:"🔒"}</div><div class="faint" style="font-size:10.5px;margin-top:2px">${esc(a.title)}</div></div>`).join("")}</div></div>
-   <div class="grid g2">
-     <div class="card"><div class="caps">С чего начать</div>
-       ${(d.onboarding||[]).map(o=>`<div class="row"><span>${o.done?"✅":"⬜"}&nbsp; ${esc(o.title)}</span>${o.done?'<span class="badge b-ok">готово</span>':''}</div>`).join("")}
-       <div style="margin-top:8px"><a href="#" onclick="go('cabinet');return false">Инструкция по подключению →</a></div></div>
-     <div class="card"><div class="caps">Анонсы</div>
-       ${(d.announcements&&d.announcements.length)?d.announcements.map(a=>`<div style="padding:8px 0;border-bottom:1px solid var(--border-1)"><b>${esc(a.title)}</b><div class="muted">${esc(a.body)}</div></div>`).join(""):`<div class="muted">Пока нет анонсов</div>`}</div></div>`;
+   <div class="card" style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+     ${ring(d.progress_pct||0)}
+     <div style="flex:1;min-width:240px">
+       <div class="caps" style="margin-bottom:6px">${d.week?("Неделя "+d.week+" из "+d.weeks):"Курс скоро стартует"}</div>
+       <div style="font-size:22px;font-weight:600;margin-bottom:4px">Привет, ${esc((d.student||"студент").split(/\s+/)[0])}</div>
+       <div class="sub" style="margin-bottom:16px">Продолжай: <strong style="color:var(--ink1)">${esc(cl.title||"—")}</strong></div>
+       <div style="display:flex;gap:8px;flex-wrap:wrap">
+         <button class="btn primary" onclick="go('lectures')">Продолжить обучение →</button>
+         ${nd?`<button class="btn" onclick="go('homework')">К заданию · через ${nd.days_left} дн</button>`:""}
+       </div></div></div>
+   <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+     <div class="card" style="margin:0"><div class="caps" style="margin-bottom:10px">Текущая лекция</div>
+       <div class="t18" style="margin-bottom:6px">${esc(cl.title||"—")}</div>
+       <div class="sub" style="margin-bottom:14px">${esc(cl.topic||"")}</div>
+       <a href="#" onclick="go('lectures');return false">Материалы лекции →</a></div>
+     <div class="card" style="margin:0;border-color:${nd&&nd.days_left<=2?'var(--warn)':'var(--b1)'}">
+       <div class="caps" style="margin-bottom:10px;color:${nd&&nd.days_left<=2?'var(--warn)':'var(--ink3)'}">${nd?("Ближайший дедлайн · через "+nd.days_left+" дн"):"Дедлайнов нет"}</div>
+       ${nd?`<div class="t18" style="margin-bottom:6px">${esc(nd.title)}</div><div class="sub" style="margin-bottom:14px">Неделя ${nd.week}.</div><a href="#" onclick="go('homework');return false">Открыть задание →</a>`:`<div class="sub">Всё сдано 🎉</div>`}</div></div>
+   ${ach?`<div class="card"><div class="t18" style="margin-bottom:14px">Достижения</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">${ach}</div></div>`:""}
+   ${onb.length?`<div class="card"><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px"><div class="t18">С чего начать</div><div class="faint mono">${onbDone}/${onb.length}</div></div>
+     <div style="display:flex;flex-direction:column;gap:2px">${onbHtml}</div>
+     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span class="sub">Застрял на подключении MCP?</span><button class="btn sm" onclick="go('cabinet')">Инструкция по подключению</button></div></div>`:""}
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Анонсы</div>
+     ${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>`;
 }
 
+// ══════════════ Курс ══════════════
+let _lecOpen=null;
+async function vLectures(){
+  view(`<h2>Курс</h2><div id="lc" class="faint">Загрузка…</div>`);
+  const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
+  const cw=d.week||0, done=ls.filter(x=>cw&&x.week<cw).length, pct=ls.length?Math.round(100*done/ls.length):0;
+  if(_lecOpen==null)_lecOpen=cw||1;
+  const asW={};as.forEach(a=>{asW[a.week]=a;});
+  const byBlock={};ls.forEach(l=>{(byBlock[l.block]=byBlock[l.block]||{name:l.block_name,items:[]}).items.push(l);});
+  let blocks="";
+  Object.keys(byBlock).sort((a,b)=>a-b).forEach(bk=>{const b=byBlock[bk];
+    blocks+=`<div style="margin-bottom:24px"><div class="caps" style="margin-bottom:8px">Блок ${bk} · ${esc(b.name||"")}</div>`;
+    b.items.forEach(l=>{
+      const st=cw&&l.week<cw?"done":cw&&l.week===cw?"info":"todo";
+      const [cbg,cfg]=CH[st];const label=st==="done"?"пройдено":st==="info"?"сейчас":"впереди";
+      const open=_lecOpen===l.week;const asg=asW[l.week];
+      blocks+=`<div class="card" style="padding:0;margin-bottom:8px;overflow:hidden;border-color:${st==='info'?'var(--accent)':'var(--b1)'}">
+        <div role="button" tabindex="0" aria-expanded="${open}" onclick="lecToggle(${l.week})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lecToggle(${l.week})}" style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;opacity:${st==='done'?'.65':'1'}">
+          <span class="mono" style="font-size:12px;font-weight:600;color:var(--ink3);width:24px;flex-shrink:0">${String(l.week).padStart(2,'0')}</span>
+          <span style="font-size:14px;font-weight:600;flex:1">${esc(l.title)}</span>
+          ${chip(cbg,cfg,label)}
+          <span style="color:var(--ink3);transform:rotate(${open?'180deg':'0'});transition:.15s;display:flex">${ic('chev',16)}</span></div>
+        ${open?`<div style="padding:0 20px 20px;border-top:1px solid var(--b1)"><div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:16px">
+          <div><div class="caps" style="margin-bottom:8px">Чему научишься</div>
+            ${(l.outcomes||[]).map(x=>`<div style="display:flex;gap:8px;font-size:13.5px;color:var(--ink2);margin-bottom:6px"><span style="flex-shrink:0;margin-top:3px">${ic('chev'?'':'')}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L19 7"/></svg></span>${esc(x)}</div>`).join("")||'<div class="faint">—</div>'}</div>
+          <div><div class="caps" style="margin-bottom:8px">Навыки</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">${(l.skills||[]).map(sk=>`<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${esc(sk)}</span>`).join("")}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${asg?`<button class="btn sm" onclick="go('homework')">Открыть в Заданиях</button>`:""}
+              ${l.materials_url?`<a class="btn sm primary" href="${esc(l.materials_url)}" target="_blank" style="text-decoration:none">Материалы</a>`:""}</div></div>
+        </div></div>`:""}
+      </div>`;
+    });
+    blocks+=`</div>`;
+  });
+  $("lc").innerHTML=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <div><div class="t18">Пройдено <span class="mono">${done}/${ls.length}</span> лекций</div><div class="sub">${cw?("Идёт неделя "+cw+" из 15."):"Курс ещё не начался."}</div></div>
+      <div class="mono" style="font-size:23px;font-weight:700;color:var(--accent)">${pct}%</div></div>
+      <div class="pbar"><i style="width:${pct}%"></i></div></div>${blocks}`;
+}
+function lecToggle(w){_lecOpen=_lecOpen===w?null:w;vLectures();}
+
+// ══════════════ Задания ══════════════
+async function vHomework(){
+  view(`<h2>Задания</h2><div id="hw" class="faint">Загрузка…</div>`);
+  const [as,subs,grades]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/submissions").catch(()=>({})),api("/api/my/grades").catch(()=>({}))]);
+  $("hw").innerHTML=as.map(a=>{
+    const s=subs[a.id],g=grades[a.id];
+    const status=s?s.status:"todo";
+    const map={accepted:["принято","done"],revise:["на доработку","risk"],submitted:["сдано","doing"],todo:["не сдано","todo"]};
+    const [lab,kind]=map[status]||map.todo;const [cbg,cfg]=CH[kind];
+    const graded=(g&&g.score!=null)||status==="revise";
+    const gbg=status==="revise"?"var(--crit-bg)":"var(--ok-bg)",gfg=status==="revise"?"var(--crit)":"var(--ok)";
+    const editable=status!=="accepted";
+    return `<div class="card">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+        <span class="mono" style="font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.6px">нед ${a.week}</span>
+        ${chip(cbg,cfg,lab)}<span style="margin-left:auto" class="faint mono">макс ${a.max_score} б · ${esc(a.fmt)}</span></div>
+      <div class="t18" style="margin-bottom:6px">${esc(a.title)}</div>
+      <div class="sub" style="margin-bottom:16px">${esc(a.description)}</div>
+      ${graded?`<div style="display:flex;gap:12px;padding:12px 14px;border-radius:10px;background:${gbg};margin-bottom:16px"><span class="mono" style="font-size:18px;font-weight:700;color:${gfg};white-space:nowrap">${g&&g.score!=null?g.score:'—'}/${a.max_score}</span><span class="sub">${esc((g&&g.feedback)||"На доработку — обнови сдачу.")}</span></div>`:""}
+      ${editable?`<div style="display:flex;flex-direction:column;gap:10px">
+        <label class="lbl">Ссылка на решение (репозиторий, PR или документ)<input class="inp mono" id="u${a.id}" value="${s?esc(s.url):""}" placeholder="https://github.com/..." style="margin-top:6px"></label>
+        <label class="lbl">Комментарий лектору<textarea class="ta" id="n${a.id}" rows="2" placeholder="Что стоит посмотреть в первую очередь" style="margin-top:6px">${s?esc(s.note):""}</textarea></label>
+        <div><button class="btn primary" onclick="submitHw(${a.id})">${s?"Обновить сдачу":"Сдать"}</button></div></div>`:""}
+    </div>`;}).join("")||'<div class="faint">Пока пусто</div>';
+}
+async function submitHw(id){const url=$("u"+id).value.trim();if(!url)return toast("Вставь ссылку на решение");
+  await api("/api/my/submissions",{method:"POST",body:JSON.stringify({assignment_id:id,url,note:$("n"+id).value})});
+  toast("Задание сдано — лектор увидит его сегодня");vHomework();refreshChrome(false);}
+
+// ══════════════ Мой проект ══════════════
 async function vProject(){
-  view(`<h2>Мой проект</h2><div id="pj">Загрузка…</div>`);
-  let pr={},s={},u={};
-  try{pr=await api("/api/my/project")}catch{} try{s=await api("/api/storage/my-files")}catch{} try{u=await api("/api/my-usage")}catch{}
-  const files=s.files||[], wk=(u.week||{});
+  view(`<h2>Мой проект</h2><div id="pj" class="faint">Загрузка…</div>`);
+  let pr={},s={},u={};try{pr=await api("/api/my/project")}catch{}try{s=await api("/api/storage/my-files")}catch{}try{u=await api("/api/my-usage")}catch{}
+  const files=s.files||[],wk=u.week||{};
+  const tiles=[["Файлы",files.length,mb(s.used_bytes||0)+" МБ из 600"],["RAG-коллекция",ragCollection().length>18?"·":"—",ragCollection()],["Cost · неделя",(wk.cost_rub||0).toFixed(0)+" ₽",fmtN(wk.tokens_used)+" токенов"],["Токены","",fmtN(wk.tokens_used)]];
   $("pj").innerHTML=`
-   <div class="card"><div class="caps">Проект</div>
-     <label>Ссылка на репозиторий</label><input id="prRepo" placeholder="https://github.com/..." value="${esc(pr.repo_url||"")}">
-     <label>Краткое описание (одна фраза)</label><input id="prDesc" value="${esc(pr.description||"")}">
-     <label>Статус</label><select id="prStatus">
-       ${["idea","discovery","design","mvp","evals","defended"].map(x=>`<option${pr.status===x?" selected":""}>${x}</option>`).join("")}</select>
-     <div style="margin-top:12px"><button class="btn primary sm" onclick="saveProject()">Сохранить</button>
-       ${pr.repo_url?` <a class="btn sm" href="${esc(pr.repo_url)}" target="_blank" style="margin-left:6px">Открыть репозиторий →</a>`:""}</div>
-   </div>
-   <div class="grid g3">
-     <div class="card"><div class="caps">Файлы</div><div class="big">${files.length}</div>
-       <div class="muted">${mb(s.used_bytes||0)} / 600 МБ</div><div class="bar"><i style="width:${Math.min(100,s.used_pct||0)}%"></i></div></div>
-     <div class="card"><div class="caps">RAG-коллекция</div><div class="mono" style="font-size:12.5px;color:var(--accent);word-break:break-all">${esc(ragCollection())}</div>
-       <div class="muted" style="margin-top:8px">Индекс через MCP:<br>rag_index / rag_search</div></div>
-     <div class="card"><div class="caps">Стоимость · неделя</div><div class="big">${(wk.cost_rub||0).toFixed(0)}<span style="font-size:14px"> ₽</span></div>
-       <div class="muted">${fmtN(wk.tokens_used)} токенов</div></div>
-     <div class="card"><div class="caps">Наблюдаемость</div><b>Langfuse</b><div class="muted" style="margin-top:6px">трейсы агента · скоро</div></div>
-   </div>
-   <div class="card"><div class="caps">Файлы проекта</div>
-     <div class="dropzone" id="pjDrop"><span class="dz-ic">${svg('upload',26)}</span>Перетащи файлы сюда или нажми<br>
-       <span class="faint">PDF/DOCX/MD, датасеты, артефакты · свободно ${mb(s.remaining_bytes!=null?s.remaining_bytes:629145600)} МБ · без секретов/ПДн</span>
-       <input type="file" id="pjIn" multiple style="display:none"></div>
-     <div id="pjMsg" class="faint" style="margin:8px 0"></div>
-     <table>${files.map(f=>`<tr><td>${esc(f.name)}</td><td class="mono">${mb(f.size)} МБ</td>
-       <td style="text-align:right"><a href="#" onclick="dlFile('${esc(f.name)}');return false">скачать</a> · <a href="#" style="color:var(--crit)" onclick="delFile('${esc(f.name)}');return false">удалить</a></td></tr>`).join("")||`<tr><td colspan=3 class="muted">Файлов нет</td></tr>`}</table>
-   </div>`;
-  wireDrop($("pjDrop"),$("pjIn"),pjUpload);
+   <div class="card"><div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+     <label class="lbl">Репозиторий<input class="inp mono" id="prRepo" value="${esc(pr.repo_url||"")}" placeholder="https://github.com/..." style="margin-top:6px"></label>
+     <label class="lbl">Статус<select class="sel" id="prStatus" style="margin-top:6px">${["idea","prototype","mvp","pilot","defended"].map(x=>`<option${pr.status===x?" selected":""}>${x}</option>`).join("")}</select></label></div>
+     <label class="lbl">Описание проекта<textarea class="ta" id="prDesc" rows="3" style="margin-top:6px">${esc(pr.description||"")}</textarea></label>
+     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" onclick="saveProject()">Сохранить</button>${pr.repo_url?`<a class="btn" href="${esc(pr.repo_url)}" target="_blank" style="text-decoration:none">Открыть репозиторий</a>`:""}</div></div>
+   <div class="tiles">
+     <div class="tile"><div class="l">Файлы</div><div class="v">${files.length}</div><div class="m">${mb(s.used_bytes||0)} МБ из 600</div></div>
+     <div class="tile"><div class="l">RAG-коллекция</div><div class="v" style="font-size:13px;color:var(--accent);word-break:break-all">${ragCollection()}</div><div class="m">rag_index / rag_search</div></div>
+     <div class="tile"><div class="l">Cost · неделя</div><div class="v">${(wk.cost_rub||0).toFixed(0)}<span style="font-size:13px"> ₽</span></div><div class="m">${fmtN(wk.tokens_used)} токенов</div></div>
+     <div class="tile"><div class="l">Наблюдаемость</div><div class="v" style="font-size:16px">Langfuse</div><div class="m">трейсы · скоро</div></div></div>
+   <div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px"><div class="t18">Файлы проекта</div><div class="faint mono">${mb(s.used_bytes||0)} / 600 МБ</div></div>
+     <div class="dz" id="pjDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите файлы или нажмите, чтобы выбрать</div><div class="faint" style="margin-top:2px">PDF, MD, IPYNB, ZIP · до 50 МБ на файл</div><input type="file" id="pjIn" multiple style="display:none"></div>
+     <div id="pjMsg" class="faint" style="margin-bottom:8px"></div>
+     ${files.length?`<table><thead><tr><th>Файл</th><th>Размер</th><th></th></tr></thead><tbody>${files.map(f=>`<tr><td class="mono">${esc(f.name)}</td><td class="mono" style="color:var(--ink2)">${mb(f.size)} МБ</td><td style="text-align:right;white-space:nowrap"><a href="#" onclick="dlFile('${esc(f.name)}');return false" style="margin-right:12px">Скачать</a><button onclick="delFile('${esc(f.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></td></tr>`).join("")}</tbody></table>`:`<div style="text-align:center;padding:20px;color:var(--ink3)">Файлов нет. Загрузите артефакты — они попадут в вашу RAG-коллекцию.</div>`}</div>`;
+  wireDrop($("pjDz"),$("pjIn"),pjUpload);
 }
-async function pjUpload(files){
-  const msg=$("pjMsg");
-  for(const f of files){
-    if(f.size>600*1048576){msg.textContent=`«${f.name}» больше 600 МБ — пропущен`;continue;}
-    msg.textContent="Загрузка "+f.name+"…";
-    try{
-      const r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);
-      const put=await fetch(r.url,{method:"PUT",body:f}); if(!put.ok)throw new Error("S3 "+put.status);
-    }catch(e){ msg.textContent=String(e).includes("413")||String(e).includes("400")?"Лимит хранилища исчерпан":"Ошибка загрузки: "+e; return; }
-  }
-  msg.textContent="Готово ✓"; vProject();
-}
-async function saveProject(){
-  await api("/api/my/project",{method:"POST",body:JSON.stringify({repo_url:$("prRepo").value,description:$("prDesc").value,status:$("prStatus").value})});
-  vProject();
-}
-async function dlFile(name){ const r=await api("/api/storage/download-url?filename="+encodeURIComponent(name)); window.open(r.url,"_blank"); }
-async function delFile(name){ if(!confirm("Удалить "+name+"?"))return; await api("/api/storage/file?filename="+encodeURIComponent(name),{method:"DELETE"}); vProject(); }
-function copyToken(){
-  if(!TOKEN)return alert("Сначала войди");
-  navigator.clipboard.writeText(TOKEN).then(
-    ()=>alert("Токен скопирован. В OpenCode добавь заголовок:\nAuthorization: Bearer <вставь токен>\nПри 401 — вернись в Кабинет и скопируй заново."),
-    ()=>prompt("Скопируй токен вручную:",TOKEN));
+async function saveProject(){await api("/api/my/project",{method:"POST",body:JSON.stringify({repo_url:$("prRepo").value,description:$("prDesc").value,status:$("prStatus").value})});toast("Проект сохранён");}
+async function pjUpload(files){const msg=$("pjMsg");for(const f of files){if(f.size>600*1048576){msg.textContent=f.name+" > 600 МБ — пропущен";continue;}msg.textContent="Загрузка "+f.name+"…";
+  try{const r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error(put.status);}
+  catch(e){msg.textContent="Ошибка: лимит хранилища или сеть";return;}}toast("Файл загружен");vProject();}
+async function dlFile(n){const r=await api("/api/storage/download-url?filename="+encodeURIComponent(n));window.open(r.url,"_blank");}
+async function delFile(n){if(!confirm("Удалить "+n+"?"))return;await api("/api/storage/file?filename="+encodeURIComponent(n),{method:"DELETE"});toast("Файл удалён");vProject();}
+
+// ══════════════ Оценки ══════════════
+async function vGrades(){
+  view(`<h2>Оценки</h2><div id="gr" class="faint">Загрузка…</div>`);
+  const [as,grades]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/grades").catch(()=>({}))]);
+  let tot=0,max=0;as.forEach(a=>{const g=grades[a.id];if(g&&g.score!=null){tot+=Number(g.score);}max+=a.max_score;});
+  const rows=as.map(a=>{const g=grades[a.id];const has=g&&g.score!=null;const r=has?g.score/a.max_score:0;
+    const kind=!has?"todo":r>=.8?"done":r>=.6?"doing":"risk";const [cbg,cfg]=CH[kind];
+    return `<tr><td class="mono" style="color:var(--ink3)">${a.week}</td><td style="font-weight:500">${esc(a.title)}</td><td>${chip(cbg,cfg,has?g.score+" / "+a.max_score:"— / "+a.max_score)}</td><td style="color:var(--ink2)">${esc((g&&g.feedback)||"Ещё не оценено")}</td></tr>`;}).join("");
+  $("gr").innerHTML=`<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+     <div><div class="caps">Итого баллов</div><div class="mono" style="font-size:30px;font-weight:700">${tot}<span style="color:var(--ink3);font-size:18px"> / ${max||100}</span></div></div>
+     <div class="sub" style="max-width:320px">Проходной порог защиты — <span class="mono" style="color:var(--ink1);font-weight:600">60</span> баллов.</div></div>
+   <div class="card" style="margin-bottom:0"><table><thead><tr><th>Неделя</th><th>Задание</th><th>Оценка</th><th>Фидбэк</th></tr></thead><tbody>${rows||`<tr><td colspan="4" class="faint">Пусто</td></tr>`}</tbody></table></div>`;
 }
 
+// ══════════════ Сообщество ══════════════
+async function vCommunity(){
+  view(`<h2>Сообщество</h2><div id="cm" class="faint">Загрузка…</div>`);
+  const [board,anns]=await Promise.all([api("/api/leaderboard").catch(()=>[]),api("/api/announcements").catch(()=>[])]);
+  const me=CLAIMS.preferred_username||CLAIMS.name;const top=board.slice(0,8);const max=Math.max(...top.map(r=>r.tokens),1);
+  const bars=top.map(r=>{const mine=r.username===me;const pct=Math.round(100*r.tokens/max);
+    return `<div style="display:flex;align-items:center;gap:12px"><span style="width:110px;font-size:12px;color:${mine?'var(--ink1)':'var(--ink2)'};font-weight:${mine?600:400};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.username)}</span>
+      <div style="flex:1;height:14px;background:var(--inset);border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${mine?'var(--accent)':'transparent'};border:1px solid var(--accent);border-radius:999px;transition:width .3s"></div></div>
+      <span style="width:64px;text-align:right" class="mono" style="font-size:11.5px;color:var(--ink2)">${fmtN(r.tokens)}</span></div>`;}).join("");
+  const rows=board.map((r,i)=>{const mine=r.username===me;
+    return `<tr style="background:${mine?'var(--accent-bg)':'transparent'}"><td class="mono" style="color:var(--ink3)">${i+1}</td><td style="font-weight:500">${esc(r.username)} ${mine?'<span class="chip" style="background:var(--accent-bg);color:var(--accent)">ты</span>':''}</td><td class="mono" style="color:var(--ink2)">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(1)} ₽</td></tr>`;}).join("");
+  $("cm").innerHTML=`
+   <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
+   <div class="card"><div class="t18" style="margin-bottom:4px">Лидерборд по токенам · неделя</div><div class="sub" style="margin-bottom:16px">Кто активнее всех гоняет агентов. Не оценка — сигнал вовлечённости.</div>
+     <div style="display:flex;flex-direction:column;gap:8px">${bars||'<div class="faint">Нет данных</div>'}</div></div>
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Группа</div><table><thead><tr><th>#</th><th>Студент</th><th>Токены</th><th>Cost</th></tr></thead><tbody>${rows||`<tr><td colspan="4" class="faint">Нет данных</td></tr>`}</tbody></table></div>`;
+}
+
+// ══════════════ Кабинет ══════════════
+async function vCabinet(){
+  view(`<h2>Кабинет</h2><div id="cab" class="faint">Загрузка…</div>`);
+  let u={},s={},p={},daily=[];try{u=await api("/api/my-usage")}catch{}try{s=await api("/api/storage/my-files")}catch{}try{p=await api("/api/progress")}catch{}try{daily=await api("/api/my/cost-daily")}catch{}
+  const wk=u.week||{};const maxc=Math.max(...daily.map(x=>x.cost),0.01);const totc=daily.reduce((a,x)=>a+x.cost,0);
+  const tiles=[["Токены · неделя",fmtN(wk.tokens_used),Math.round(wk.used_pct||0)+"% квоты"],["Хранилище",mb(s.used_bytes||0)+" МБ","из 600 МБ"],["Домашки",(p.accepted||0)+"/"+(p.assignments_total||0),"принято"],["Сессий",(u.sessions_this_week||{}).opened+"/"+(u.sessions_this_week||{}).limit,"на неделе"]];
+  const bars=daily.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:100%;background:${x.cost>=maxc&&maxc>0.02?'var(--warn)':'var(--accent)'};border-radius:6px 6px 0 0;height:${Math.round(100*x.cost/maxc)||2}%;transition:height .3s"></div><span class="mono" style="font-size:11px;color:var(--ink3)">${x.day}</span></div>`).join("");
+  const steps=[["Поставь CLI","npm i -g opencode-ai"],["Пропиши MCP-сервер и заголовок Authorization","opencode mcp add engineer-ai https://mcp.engineer-ai.pro/mcp"],["Скопируй скиллы курса","opencode skills pull engineer-ai/*"],["Первый вызов — проверка связи","opencode run \"покажи мою RAG-коллекцию\""]];
+  const tokMask=TOKEN?"ape_••••"+TOKEN.slice(-4):"—";
+  $("cab").innerHTML=`
+   <div class="tiles">${tiles.map(t=>`<div class="tile"><div class="l">${t[0]}</div><div class="v">${t[1]}</div><div class="m">${t[2]}</div></div>`).join("")}</div>
+   <div class="card"><div class="t18" style="margin-bottom:4px">Подключение OpenCode</div><div class="sub" style="margin-bottom:16px">Один токен на весь курс. Он же даёт доступ к вашей RAG-коллекции и квоте.</div>
+     <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+       <div style="padding:12px 14px;border-radius:10px;background:var(--inset);border:1px solid var(--b1)"><div class="caps" style="margin-bottom:4px">Endpoint</div><div class="mono" style="font-size:13px">mcp.engineer-ai.pro/mcp</div></div>
+       <div style="padding:12px 14px;border-radius:10px;background:var(--inset);border:1px solid var(--b1)"><div class="caps" style="margin-bottom:4px">Заголовок</div><div class="mono" style="font-size:13px">Authorization: Bearer ${tokMask}</div></div></div>
+     <button class="btn primary" onclick="copyToken()" style="margin-bottom:20px">${ic('copy',16)} Скопировать токен</button>
+     <div style="display:flex;flex-direction:column;gap:10px">${steps.map((st,i)=>`<div style="display:flex;gap:12px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:999px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span><div><div style="font-size:13.5px;font-weight:500">${esc(st[0])}</div><div class="mono" style="font-size:12px;color:var(--ink3);margin-top:2px">${esc(st[1])}</div></div></div>`).join("")}</div></div>
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Cost за неделю</div>
+     <div style="display:flex;align-items:flex-end;gap:8px;height:96px">${bars||'<div class="faint">Нет вызовов на этой неделе</div>'}</div>
+     <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--b1)" class="sub">Итого <span class="mono" style="color:var(--ink1);font-weight:600">${totc.toFixed(2)} ₽</span> · ${fmtN(wk.tokens_used)} токенов из недельной квоты</div></div>`;
+}
+function copyToken(){if(!TOKEN)return toast("Сначала войди");navigator.clipboard.writeText(TOKEN).then(()=>toast("Токен скопирован в буфер"),()=>prompt("Скопируй вручную:",TOKEN));}
+
+// ══════════════ Командный центр ══════════════
+let _adm={sub:"students"};
+const ASUBS=[["students","Студенты"],["kt","КТ и оценки"],["partners","Партнёры"],["calendar","Календарь"],["signals","Сигналы"],["materials","Материалы"],["notes","Заметки"],["announce","Анонсы"]];
+const ktSum=s=>{let sc=0,mx=0;(s.kt||[]).forEach(k=>{if(k.score!=null)sc+=k.score;mx+=k.max;});return[sc,mx];};
+async function vAdmin(){
+  view(`<h2>Командный центр</h2><div class="tiles" id="aTiles"></div><div class="subbar" id="aSub"></div><div id="aBody" class="faint">Загрузка…</div>`);
+  $("aSub").innerHTML=ASUBS.map(([k,l])=>`<button class="subtab${_adm.sub===k?' active':''}" data-s="${k}">${l}</button>`).join("");
+  $("aSub").querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{_adm.sub=b.dataset.s;$("aSub").querySelectorAll(".subtab").forEach(x=>x.classList.toggle("active",x.dataset.s===_adm.sub));paintAdm();});
+  const [roster,partners,cal,d]=await Promise.all([api("/api/admin/roster").catch(()=>({students:[],assignments:[]})),api("/api/admin/partners").catch(()=>[]),api("/api/admin/calendar").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
+  _adm.roster=roster;_adm.partners=partners;_adm.cal=cal;_adm.dash=d;
+  const st=roster.students||[];const risk=st.filter(s=>s.risk_note).length;const cost=st.reduce((a,s)=>a+(s.cost_rub||0),0);
+  const pcts=st.map(s=>{const[a,b]=ktSum(s);return b?a/b:null;}).filter(x=>x!=null);const avg=pcts.length?Math.round(100*pcts.reduce((a,b)=>a+b,0)/pcts.length)+"%":"—";
+  const tiles=[["Студентов",st.length,"в ростере","var(--ink1)"],["Партнёров",partners.length,"","var(--ink1)"],["Средний балл",avg,"по КТ","var(--ink1)"],["В зоне риска",risk,"нужен контакт","var(--crit)"],["Cost · неделя",cost.toFixed(0)+" ₽","","var(--ink1)"],["Прогресс курса",(d.week?Math.round(100*d.week/(d.weeks||15)):0)+"%","неделя "+(d.week||0)+" из 15","var(--ink1)"]];
+  $("aTiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="l">${t[0]}</div><div class="v" style="color:${t[3]}">${t[1]}</div><div class="m">${t[2]}</div></div>`).join("");
+  paintAdm();
+}
+function paintAdm(){({students:admStudents,kt:admKt,partners:admPartners,calendar:admCal,signals:admSignals,materials:admMaterials,notes:admNotes,announce:admAnnounce}[_adm.sub]||admStudents)();}
+const aB=h=>$("aBody").innerHTML=h;
+function riskStyle(r){return r==="risk"?["var(--crit-bg)","var(--crit)"]:r==="watch"?["var(--warn-bg)","var(--warn)"]:["var(--ok-bg)","var(--ok)"];}
+function admStudents(){
+  const st=_adm.roster.students||[];
+  aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div><div class="t18">Студенты</div><div class="faint">Ростер наполняется автоматически. Партнёр, неделя и риск правятся в таблице.</div></div><button class="btn primary" onclick="addStudentModal()">+ Добавить</button></div>
+   <div style="overflow-x:auto"><table style="min-width:720px"><thead><tr><th>Студент</th><th>Партнёр</th><th>Неделя</th><th>КТ-баллы</th><th>Cost</th><th>Риск</th></tr></thead><tbody>
+   ${st.map(s=>{const[sc,mx]=ktSum(s);const r=mx?sc/mx:0;const kind=r>=.7?"done":r>=.45?"doing":"risk";const[cbg,cfg]=CH[kind];
+     const rk=s.risk_note==="risk"?"risk":s.risk_note==="watch"?"watch":s.risk_note?"risk":"ok";const[rbg,rfg]=riskStyle(rk);
+     return `<tr><td><div style="font-weight:500">${esc(s.username)}</div><div class="mono" style="font-size:11px;color:var(--ink3)">${esc((s.student_id||"").slice(0,10))}</div></td>
+       <td style="padding:6px 8px"><input class="ie" id="pt_${s.student_id}" value="${esc(s.partner_name||partnerNameById(s.partner_id))}" onchange="saveMeta('${s.student_id}')"></td>
+       <td style="padding:6px 8px"><input class="ie mono" id="wk_${s.student_id}" style="width:56px" value="${s.week!=null?s.week:""}" onchange="saveMeta('${s.student_id}')"></td>
+       <td>${chip(cbg,cfg,sc+"/"+mx)}</td>
+       <td class="mono" style="color:var(--ink2)">${(s.cost_rub||0).toFixed(1)} ₽</td>
+       <td style="padding:6px 8px"><select class="ie" id="rk_${s.student_id}" style="background:${rbg};color:${rfg};font-weight:600" onchange="saveMeta('${s.student_id}')"><option value=""${rk==="ok"?" selected":""}>в норме</option><option value="watch"${rk==="watch"?" selected":""}>под наблюдением</option><option value="risk"${rk==="risk"?" selected":""}>риск</option></select></td></tr>`;}).join("")||`<tr><td colspan="6" class="faint" style="padding:20px">Пока нет студентов — появятся после первого входа и вызова MCP.</td></tr>`}
+   </tbody></table></div></div>`);
+}
+function partnerNameById(pid){if(pid==null)return "—";const p=(_adm.partners||[]).find(p=>String(p.id)===String(pid));return p?p.name:"—";}
+async function saveMeta(sid){const pv=$("pt_"+sid).value.trim();const p=(_adm.partners||[]).find(p=>p.name===pv);
+  await api("/api/admin/student-meta",{method:"POST",body:JSON.stringify({student_id:sid,partner_id:p?p.id:null,track_week:parseInt($("wk_"+sid).value)||null,risk_note:$("rk_"+sid).value})});
+  toast("Сохранено");}
+function admKt(){
+  const st=_adm.roster.students||[],as=_adm.roster.assignments||[];
+  const cards=as.map(a=>{const sc=st.map(s=>(s.kt.find(k=>k.assignment_id===a.id)||{}).score).filter(x=>x!=null);
+    const avg=sc.length?(sc.reduce((x,y)=>x+y,0)/sc.length).toFixed(1):"—";const strug=st.filter(s=>{const k=s.kt.find(k=>k.assignment_id===a.id);return k&&k.score!=null&&k.score<0.6*a.max;}).length;
+    return `<div class="tile"><div class="l">нед ${a.week} · ${esc(a.title)}</div><div class="v" style="color:${strug?'var(--warn)':'var(--ink1)'}">${avg}</div><div class="m">оценено ${sc.length}/${st.length} · доработка ${strug}</div></div>`;}).join("");
+  aB(`<div class="tiles">${cards||'<div class="faint">Нет заданий</div>'}</div><div id="aSubs" class="card faint" style="margin-bottom:0">Загрузка сдач…</div>`);
+  api("/api/admin/submissions").then(subs=>{const pend=subs.filter(s=>s.status!=="accepted").length;
+    $("aSubs").className="card";$("aSubs").innerHTML=`<div class="t18" style="margin-bottom:4px">Сдачи на проверке</div><div class="faint" style="margin-bottom:14px">${pend?pend+" ждут проверки":"все проверены"} · балл и статус ставятся в строке.</div>
+     ${subs.map(s=>`<div style="border:1px solid var(--b1);border-radius:10px;padding:14px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><span style="font-weight:600;font-size:14px">${esc(s.username)}</span><a href="${esc(s.url)}" target="_blank" class="mono" style="font-size:12px">${esc(s.assignment)}</a><span style="margin-left:auto" class="faint mono">${esc(s.status)}</span></div>
+       <div style="display:grid;grid-template-columns:90px 170px 1fr auto;gap:8px;align-items:center">
+         <input class="inp mono" id="sc_${s.student_id}_${s.assignment_id}" style="height:36px" placeholder="балл" value="${s.score!=null?s.score:""}">
+         <select class="sel" id="stt_${s.student_id}_${s.assignment_id}" style="height:36px"><option value="accepted"${s.status==='accepted'?' selected':''}>принято</option><option value="revise"${s.status==='revise'?' selected':''}>на доработку</option><option value="submitted"${s.status==='submitted'?' selected':''}>сдано</option></select>
+         <input class="inp" id="fb_${s.student_id}_${s.assignment_id}" style="height:36px" placeholder="фидбэк студенту" value="${esc(s.feedback||'')}">
+         <button class="btn sm" onclick="gradeHw('${s.student_id}',${s.assignment_id})">Сохранить</button></div></div>`).join("")||'<div class="faint">Сдач нет</div>'}`;
+  }).catch(()=>{$("aSubs").innerHTML='<div class="faint">Не удалось загрузить сдачи</div>';});
+}
+async function gradeHw(sid,aid){const sc=parseFloat($("sc_"+sid+"_"+aid).value);if(isNaN(sc))return toast("Укажи балл");
+  await api("/api/admin/grade",{method:"POST",body:JSON.stringify({student_id:sid,assignment_id:aid,score:sc,status:$("stt_"+sid+"_"+aid).value,feedback:$("fb_"+sid+"_"+aid).value})});
+  toast("Оценка сохранена");const r=await api("/api/admin/roster").catch(()=>_adm.roster);_adm.roster=r;admKt();}
+function admPartners(){
+  const ps=_adm.partners||[],st=_adm.roster.students||[];
+  aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="t18">Партнёры курса</div><button class="btn primary" onclick="addPartnerModal()">+ Добавить</button></div>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">${ps.map(p=>{const cnt=st.filter(s=>String(s.partner_id)===String(p.id)).length;
+     return `<div style="border:1px solid var(--b1);border-radius:10px;padding:14px;position:relative"><button onclick="delPartner(${p.id})" aria-label="Удалить" style="position:absolute;top:8px;right:8px;width:24px;height:24px;border:0;border-radius:8px;background:none;color:var(--ink3);cursor:pointer;font-size:14px">×</button>
+       <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.name)}</div><div class="sub" style="font-size:12px">${esc(p.contact||"")}</div><div class="faint mono" style="margin-top:8px">${cnt} студента · ${esc(p.status||"")}</div></div>`;}).join("")||'<div class="faint">Партнёров нет</div>'}</div></div>`);
+}
+async function delPartner(id){if(!confirm("Удалить партнёра?"))return;await api("/api/admin/partners/"+id,{method:"DELETE"});_adm.partners=await api("/api/admin/partners").catch(()=>[]);_adm.roster=await api("/api/admin/roster").catch(()=>_adm.roster);toast("Партнёр удалён");paintAdm();}
+function admCal(){
+  const cw=_adm.dash.week||0;const MON=["","янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+  aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="t18">Календарь курса</div><button class="btn primary" onclick="addEventModal()">+ Событие</button></div>
+   ${(_adm.cal||[]).map(e=>{const past=e.week<cw,now=e.week===cw;const[cbg,cfg]=e.type==='final'?CH.done:e.type==='kt'?CH.doing:CH.info;const kind=e.type==='kt'?'дедлайн':e.type==='final'?'защита':e.type==='guest'?'гость':'событие';
+     const dd=(e.date||"").split(" ");
+     return `<div style="display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--b1);${past?'opacity:.6':''}"><div style="width:64px;flex-shrink:0;text-align:center" class="mono"><div style="font-size:18px;font-weight:700">${esc(dd[0]||("н"+e.week))}</div><div style="font-size:11px;color:var(--ink3);text-transform:uppercase">${esc(dd[1]||"")}</div></div>
+       <div style="flex:1"><div style="font-size:13.5px;font-weight:500">${esc(e.title)}</div><div class="faint">неделя ${e.week}${now?' · сейчас':''}</div></div>${chip(cbg,cfg,kind)}
+       <button onclick="delEvent(${e.id})" style="border:0;background:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px">×</button></div>`;}).join("")||'<div class="faint">Событий нет</div>'}</div>`);
+}
+async function delEvent(id){await api("/api/admin/calendar/"+id,{method:"DELETE"});_adm.cal=await api("/api/admin/calendar").catch(()=>[]);toast("Удалено");paintAdm();}
+function admSignals(){
+  const st=_adm.roster.students||[],cw=_adm.dash.week||0,sig=[];
+  st.forEach(s=>{if(s.risk_note&&s.risk_note!=="watch")sig.push(["риск",s.username,esc(s.risk_note),"crit"]);
+    const pct=100*(s.tokens||0)/25000000;if(pct>80)sig.push(["квота",s.username,"Израсходовано "+Math.round(pct)+"% недельной квоты","warn"]);
+    (s.kt||[]).forEach(k=>{if(k.score!=null&&k.score<0.6*k.max)sig.push(["КТ<60%",s.username,k.title+": "+k.score+"/"+k.max,"warn"]);});
+    if(s.week!=null&&cw&&s.week<cw-1)sig.push(["отставание",s.username,"Отстаёт на "+(cw-s.week)+" нед","warn"]);});
+  aB(`<div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:4px">Сигналы</div><div class="faint" style="margin-bottom:14px">Автоматические риски. Список read-only — действие в разделе, на который он ведёт.</div>
+   ${sig.map(([tag,who,detail,k])=>{const[bg,fg]=CH[k==='crit'?'risk':'doing'];return `<div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:${bg};margin-bottom:8px"><span class="chip" style="background:var(--bg1);color:${fg}">${tag}</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">${esc(who)}</div><div class="sub" style="font-size:12px">${detail}</div></div></div>`;}).join("")||'<div style="text-align:center;padding:30px" class="faint">Всё в норме · рисков нет 🎉</div>'}</div>`);
+}
+async function admMaterials(){
+  aB(`<div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Материалы курса</div>
+     <div class="dz" id="matDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите слайды и конспекты</div><div class="faint" style="margin-top:2px">Попадут в публичный бакет s3.engineer-ai.pro/materials</div><input type="file" id="matIn" multiple style="display:none"></div>
+     <div id="matMsg" class="faint" style="margin-bottom:8px"></div><div id="matList" class="faint">Загрузка…</div></div>`);
+  wireDrop($("matDz"),$("matIn"),matUpload);refreshMat();
+}
+async function refreshMat(){const ms=await api("/api/admin/materials").catch(()=>[]);
+  $("matList").className="";$("matList").innerHTML=ms.map(m=>`<div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1)"><a href="${esc(m.url)}" target="_blank" class="mono" style="flex:1;font-size:12.5px">${esc(m.name)}</a>
+     <select class="sel" id="mw_${esc(m.name)}" style="height:32px;width:130px"><option value="">не привязан</option>${Array.from({length:15},(_,i)=>`<option value="${i+1}">неделя ${i+1}</option>`).join("")}</select>
+     <button class="btn sm" onclick="attachMat('${esc(m.name)}','${esc(m.url)}')">Привязать</button>
+     <button onclick="delMat('${esc(m.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></div>`).join("")||'<div class="faint">Материалов нет</div>';
+}
+async function matUpload(files){const msg=$("matMsg");for(const f of files){msg.textContent="Загрузка "+f.name+"…";try{const r=await api("/api/admin/material-upload-url?filename="+encodeURIComponent(f.name),{method:"POST"});const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error(put.status);}catch(e){msg.textContent="Ошибка: "+e;return;}}toast("Материал загружен");msg.textContent="";refreshMat();}
+async function attachMat(name,url){const w=$("mw_"+name).value;if(!w)return toast("Выбери неделю");await api("/api/admin/lecture-material",{method:"POST",body:JSON.stringify({week:parseInt(w),url})});toast("Материал привязан к неделе "+w);}
+async function delMat(name){if(!confirm("Удалить "+name+"?"))return;await api("/api/admin/material?filename="+encodeURIComponent(name),{method:"DELETE"});toast("Файл удалён");refreshMat();}
+async function admNotes(){aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px"><div class="t18">Заметки лектора</div><span class="faint mono" id="nState"></span></div><textarea class="ta" id="lnotes" rows="12" style="line-height:1.6" placeholder="Приватные заметки по группе — автосохранение"></textarea></div>`);
+  const n=await api("/api/admin/notes").catch(()=>({body:""}));$("lnotes").value=n.body||"";
+  $("lnotes").oninput=()=>{$("nState").textContent="сохранение…";clearTimeout(admNotes._t);admNotes._t=setTimeout(async()=>{await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nState").textContent="сохранено";},700);};}
+async function admAnnounce(){aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div><input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px"><textarea class="ta" id="annB" rows="3" placeholder="Текст анонса" style="margin-bottom:14px"></textarea><button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Опубликованные</div><div id="annList" class="faint">Загрузка…</div></div>`);
+  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||'<div class="faint">Пусто</div>';}
+async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value})});toast("Анонс опубликован");admAnnounce();}
+
+// ── Модалки ──
+function showModal(title,fields,cta,submit){
+  $("modalHost").innerHTML=`<div class="modalbg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="t18" style="margin-bottom:14px">${esc(title)}</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">${fields.map(f=>`<label class="lbl">${esc(f.label)}<input class="inp" id="mf_${f.k}" placeholder="${esc(f.ph||'')}" style="margin-top:6px"></label>`).join("")}</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" onclick="closeModal()">Отмена</button><button class="btn primary" id="mSubmit">${esc(cta)}</button></div></div></div>`;
+  $("mSubmit").onclick=submit;
+}
+function closeModal(){$("modalHost").innerHTML="";}
+function mval(k){return ($("mf_"+k)||{}).value||"";}
+function addStudentModal(){showModal("Добавить студента",[{k:"name",label:"Имя / логин",ph:"ivan"},{k:"partner",label:"Партнёр",ph:"Ozon Tech"}],"Добавить",async()=>{const n=mval("name").trim();if(!n)return toast("Заполните имя");const pv=mval("partner").trim();const p=(_adm.partners||[]).find(p=>p.name===pv);await api("/api/admin/student-meta",{method:"POST",body:JSON.stringify({student_id:"m_"+n.toLowerCase().replace(/[^a-z0-9]+/g,"_"),username:n,partner_id:p?p.id:null})});closeModal();toast("Студент добавлен");vAdmin();});}
+function addPartnerModal(){showModal("Добавить партнёра",[{k:"company",label:"Компания",ph:"Yandex Cloud"},{k:"contact",label:"Контакт",ph:"Имя · роль"}],"Добавить",async()=>{const c=mval("company").trim();if(!c)return toast("Заполните компанию");await api("/api/admin/partners",{method:"POST",body:JSON.stringify({name:c,contact:mval("contact")})});_adm.partners=await api("/api/admin/partners").catch(()=>[]);closeModal();toast("Партнёр добавлен");paintAdm();});}
+function addEventModal(){showModal("Новое событие",[{k:"week",label:"Неделя (1–15)",ph:"8"},{k:"title",label:"Название",ph:"Промежуточная защита"}],"Добавить",async()=>{const w=parseInt(mval("week"));if(!w)return toast("Нужна неделя");await api("/api/admin/calendar",{method:"POST",body:JSON.stringify({week:w,title:mval("title"),type:"kt"})});_adm.cal=await api("/api/admin/calendar").catch(()=>[]);closeModal();toast("Событие добавлено");paintAdm();});}
+
+// ── drag-drop ──
+function wireDrop(zone,input,onFiles){if(!zone)return;zone.onclick=()=>input.click();input.onchange=()=>{if(input.files.length)onFiles([...input.files]);};
+  zone.ondragover=e=>{e.preventDefault();zone.classList.add("over");};zone.ondragleave=()=>zone.classList.remove("over");
+  zone.ondrop=e=>{e.preventDefault();zone.classList.remove("over");if(e.dataTransfer.files.length)onFiles([...e.dataTransfer.files]);};}
+
+// ── старт ──
 $("btnTheme").onclick=toggleTheme;
 $("btnGithub").onclick=()=>login("github");
 $("btnLogin").onclick=()=>login();
-$("btnLogout").onclick=()=>{const idt=sessionStorage.getItem('idt');sessionStorage.clear();
-  const p=new URLSearchParams({client_id:CLIENT,post_logout_redirect_uri:REDIRECT});if(idt)p.set('id_token_hint',idt);location.href=KC+"/logout?"+p;};
-
-window.addEventListener('error',e=>{const a=$("app");if(a&&a.classList.contains('hidden')&&!$("login").classList.contains('hidden'))return;
-  const v=$("view");if(v&&!v.innerHTML.trim())v.innerHTML='<div class="errbar">Ошибка: '+esc(e.message)+'</div>';});
-(function(){try{
-  const q=new URLSearchParams(location.search);
-  if(q.get('code'))return exchange(q.get('code'),q.get('state'));
-  let t=null;try{t=sessionStorage.getItem('tok')}catch(_){}
-  if(t&&!expd(t))boot(t);else showLogin();
-}catch(e){showLogin();}})();
+$("btnLogout").onclick=()=>{const idt=sessionStorage.getItem('idt');sessionStorage.clear();const p=new URLSearchParams({client_id:CLIENT,post_logout_redirect_uri:REDIRECT});if(idt)p.set('id_token_hint',idt);location.href=KC+"/logout?"+p;};
+(function(){try{const q=new URLSearchParams(location.search);if(q.get('code'))return exchange(q.get('code'),q.get('state'));
+  let t=null;try{t=sessionStorage.getItem('tok')}catch(_){}if(t&&!expd(t))boot(t);else showLogin();}catch(e){showLogin();}})();
 </script>
 </body>
 </html>
