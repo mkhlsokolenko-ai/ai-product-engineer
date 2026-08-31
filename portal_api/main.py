@@ -11,6 +11,7 @@ aud=course-mcp (audience-mapper клиента portal).
 """
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import jwt
@@ -47,6 +48,38 @@ class ProjectIn(BaseModel):
     repo_url: str = ""
     description: str = ""
     status: str = "idea"
+
+
+class PartnerIn(BaseModel):
+    name: str
+    contact: str = ""
+    email: str = ""
+    status: str = "active"
+    notes: str = ""
+
+
+class CalendarIn(BaseModel):
+    week: int
+    title: str
+    date_label: str = ""
+    type: str = "kt"
+
+
+class StudentMetaIn(BaseModel):
+    student_id: str
+    username: str = ""
+    partner_id: int | None = None
+    risk_note: str = ""
+    track_week: int | None = None
+
+
+class NotesIn(BaseModel):
+    body: str = ""
+
+
+class LectureMaterialIn(BaseModel):
+    week: int
+    url: str = ""
 
 
 def _mc(public: bool) -> Minio:
@@ -441,4 +474,192 @@ async def set_project(body: ProjectIn, claims: dict = Depends(verify)) -> dict:
             "VALUES(%s,%s,%s,%s,%s,now()) ON CONFLICT(student_id) DO UPDATE SET "
             "repo_url=EXCLUDED.repo_url,description=EXCLUDED.description,status=EXCLUDED.status,updated_at=now()",
             (claims["sub"], claims.get("preferred_username", "?"), body.repo_url, body.description, body.status))
+    return {"ok": True}
+
+
+# ─────────────────────────── Командный центр лектора ───────────────────────────
+
+_MONTHS = ["", "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
+
+
+def _week_date(week: int) -> str:
+    start = date.fromisoformat(settings.course_start_date)
+    d = start + timedelta(days=(max(1, week) - 1) * 7)
+    return f"{d.day} {_MONTHS[d.month]}"
+
+
+@app.get("/api/admin/roster")
+async def admin_roster(claims: dict = Depends(require_staff)) -> dict:
+    """Ростер: активность за неделю, КТ-оценки по заданиям, партнёр, риск, прогресс."""
+    async with db._conn() as c:  # noqa: SLF001
+        asg = await (await c.execute(
+            "SELECT id,week,title,max_score FROM assignments ORDER BY position,week")).fetchall()
+        act = await (await c.execute(
+            "SELECT student_id, MAX(username), SUM(input_tokens+output_tokens), SUM(cost_rub) "
+            "FROM cost_journal WHERE ts >= date_trunc('week', now()) GROUP BY student_id")).fetchall()
+        proj = await (await c.execute(
+            "SELECT student_id,username,description,status FROM projects")).fetchall()
+        grd = await (await c.execute("SELECT student_id,assignment_id,score FROM grades")).fetchall()
+        subs = await (await c.execute(
+            "SELECT student_id, COUNT(*) FILTER (WHERE status='accepted'), COUNT(*) "
+            "FROM submissions GROUP BY student_id")).fetchall()
+        meta = await (await c.execute(
+            "SELECT student_id,username,partner_id,risk_note,track_week FROM student_meta")).fetchall()
+
+    assignments = [{"id": r[0], "week": r[1], "title": r[2], "max": r[3]} for r in asg]
+    students: dict[str, dict] = {}
+
+    def row(sid: str, uname: str | None = None) -> dict:
+        r = students.get(sid)
+        if r is None:
+            r = students[sid] = {
+                "student_id": sid, "username": uname or sid[:10], "project": "", "status": "idea",
+                "partner_id": None, "risk_note": "", "week": None,
+                "tokens": 0, "cost_rub": 0.0, "kt": [], "accepted": 0, "submitted": 0}
+        elif uname:
+            r["username"] = uname
+        return r
+
+    for sid, uname, tok, cost in act:
+        r = row(sid, uname); r["tokens"] = int(tok or 0); r["cost_rub"] = float(cost or 0)
+    for sid, uname, desc, status in proj:
+        r = row(sid, uname); r["project"] = desc or ""; r["status"] = status or "idea"
+    for sid, acc, tot in subs:
+        r = row(sid); r["accepted"] = int(acc or 0); r["submitted"] = int(tot or 0)
+    for sid, uname, pid, risk, tw in meta:
+        r = row(sid, uname); r["partner_id"] = pid; r["risk_note"] = risk or ""; r["week"] = tw
+
+    gmap: dict[str, dict] = {}
+    for sid, aid, score in grd:
+        gmap.setdefault(sid, {})[aid] = float(score) if score is not None else None
+    for sid, r in students.items():
+        r["kt"] = [{"assignment_id": a["id"], "week": a["week"], "title": a["title"],
+                    "max": a["max"], "score": gmap.get(sid, {}).get(a["id"])} for a in assignments]
+
+    return {"assignments": assignments,
+            "students": sorted(students.values(), key=lambda x: x["username"].lower())}
+
+
+@app.post("/api/admin/student-meta")
+async def set_student_meta(body: StudentMetaIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO student_meta(student_id,username,partner_id,risk_note,track_week,updated_at) "
+            "VALUES(%s,%s,%s,%s,%s,now()) ON CONFLICT(student_id) DO UPDATE SET "
+            "username=COALESCE(NULLIF(EXCLUDED.username,''),student_meta.username), "
+            "partner_id=EXCLUDED.partner_id, risk_note=EXCLUDED.risk_note, "
+            "track_week=EXCLUDED.track_week, updated_at=now()",
+            (body.student_id, body.username, body.partner_id, body.risk_note, body.track_week))
+    return {"ok": True}
+
+
+@app.get("/api/admin/partners")
+async def get_partners(claims: dict = Depends(require_staff)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        rows = await (await c.execute(
+            "SELECT id,name,contact,email,status,notes FROM partners ORDER BY id")).fetchall()
+    return [{"id": r[0], "name": r[1], "contact": r[2], "email": r[3], "status": r[4], "notes": r[5]}
+            for r in rows]
+
+
+@app.post("/api/admin/partners")
+async def add_partner(body: PartnerIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        r = await (await c.execute(
+            "INSERT INTO partners(name,contact,email,status,notes) VALUES(%s,%s,%s,%s,%s) RETURNING id",
+            (body.name, body.contact, body.email, body.status, body.notes))).fetchone()
+    return {"ok": True, "id": r[0]}
+
+
+@app.delete("/api/admin/partners/{pid}")
+async def del_partner(pid: int, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("DELETE FROM partners WHERE id=%s", (pid,))
+        await c.execute("UPDATE student_meta SET partner_id=NULL WHERE partner_id=%s", (pid,))
+    return {"ok": True}
+
+
+@app.get("/api/admin/calendar")
+async def get_calendar(claims: dict = Depends(require_staff)) -> list[dict]:
+    async with db._conn() as c:  # noqa: SLF001
+        rows = await (await c.execute(
+            "SELECT id,week,date_label,title,type FROM calendar_events ORDER BY week,id")).fetchall()
+    return [{"id": r[0], "week": r[1], "date": r[2] or _week_date(r[1]), "title": r[3], "type": r[4]}
+            for r in rows]
+
+
+@app.post("/api/admin/calendar")
+async def add_event(body: CalendarIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        r = await (await c.execute(
+            "INSERT INTO calendar_events(week,date_label,title,type) VALUES(%s,%s,%s,%s) RETURNING id",
+            (body.week, body.date_label, body.title, body.type))).fetchone()
+    return {"ok": True, "id": r[0]}
+
+
+@app.delete("/api/admin/calendar/{eid}")
+async def del_event(eid: int, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("DELETE FROM calendar_events WHERE id=%s", (eid,))
+    return {"ok": True}
+
+
+@app.get("/api/admin/notes")
+async def get_notes(claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        r = await (await c.execute(
+            "SELECT body FROM lecturer_notes WHERE lecturer_id=%s", (claims["sub"],))).fetchone()
+    return {"body": r[0] if r else ""}
+
+
+@app.put("/api/admin/notes")
+async def set_notes(body: NotesIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO lecturer_notes(lecturer_id,body,updated_at) VALUES(%s,%s,now()) "
+            "ON CONFLICT(lecturer_id) DO UPDATE SET body=EXCLUDED.body, updated_at=now()",
+            (claims["sub"], body.body))
+    return {"ok": True}
+
+
+# ── Материалы курса (публичный бакет materials, drag-drop лектора) ──
+
+def _ensure_materials() -> None:
+    mc = _mc(False)
+    if not mc.bucket_exists("materials"):
+        mc.make_bucket("materials")
+    pol = {"Version": "2012-10-17", "Statement": [{"Effect": "Allow",
+           "Principal": {"AWS": ["*"]}, "Action": ["s3:GetObject"],
+           "Resource": ["arn:aws:s3:::materials/*"]}]}
+    mc.set_bucket_policy("materials", json.dumps(pol))
+
+
+@app.get("/api/admin/materials")
+async def list_materials(claims: dict = Depends(require_staff)) -> list[dict]:
+    try:
+        _ensure_materials()
+        return [{"name": o.object_name, "size": o.size or 0,
+                 "url": f"https://{settings.minio_public}/materials/{o.object_name}"}
+                for o in _mc(False).list_objects("materials", recursive=True)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+@app.post("/api/admin/material-upload-url")
+async def material_upload_url(filename: str, claims: dict = Depends(require_staff)) -> dict:
+    _ensure_materials()
+    url = _mc(True).presigned_put_object("materials", filename, expires=timedelta(hours=1))
+    return {"url": url, "public_url": f"https://{settings.minio_public}/materials/{filename}"}
+
+
+@app.delete("/api/admin/material")
+async def del_material(filename: str, claims: dict = Depends(require_staff)) -> dict:
+    _mc(False).remove_object("materials", filename)
+    return {"ok": True}
+
+
+@app.post("/api/admin/lecture-material")
+async def set_lecture_material(body: LectureMaterialIn, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("UPDATE lectures SET materials_url=%s WHERE week=%s", (body.url, body.week))
     return {"ok": True}

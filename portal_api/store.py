@@ -31,7 +31,36 @@ CREATE TABLE IF NOT EXISTS projects (
     student_id TEXT PRIMARY KEY, username TEXT, repo_url TEXT, description TEXT,
     status TEXT DEFAULT 'idea', updated_at TIMESTAMPTZ DEFAULT now()
 );
+-- Командный центр лектора --
+CREATE TABLE IF NOT EXISTS partners (
+    id SERIAL PRIMARY KEY, name TEXT, contact TEXT, email TEXT,
+    status TEXT DEFAULT 'active', notes TEXT, created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id SERIAL PRIMARY KEY, week INT, date_label TEXT, title TEXT,
+    type TEXT DEFAULT 'kt', created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS student_meta (
+    student_id TEXT PRIMARY KEY, username TEXT, partner_id INT,
+    risk_note TEXT, track_week INT, updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS lecturer_notes (
+    lecturer_id TEXT PRIMARY KEY, body TEXT, updated_at TIMESTAMPTZ DEFAULT now()
+);
 """
+
+# Календарь курса по умолчанию (сеется, если таблица пуста). date_label пуст —
+# API считает дату из COURSE_START_DATE. type: kt | guest | partner | final.
+CALENDAR_SEED = [
+    (1, "Старт курса · ДЗ-1: 5 идей", "kt"),
+    (3, "ДЗ-2: выбранная идея + ADR", "kt"),
+    (5, "ДЗ-3: дизайн-документ (MLSDD/Agent)", "kt"),
+    (8, "Гость из индустрии (PdM)", "guest"),
+    (10, "ДЗ-4: работающий MVP", "kt"),
+    (13, "ДЗ-5: evals + unit-экономика", "kt"),
+    (14, "Подготовка защиты · прожарка (grill-me)", "guest"),
+    (15, "Финальная защита + комиссия", "final"),
+]
 
 # 15 недель × 5 блоков (структура из программы v0.5).
 # Кортеж: week, block, title, topic, outcomes[], skills[], materials_url.
@@ -144,3 +173,10 @@ async def ensure() -> None:
                 await c.execute(
                     "INSERT INTO assignments(week,title,description,fmt,max_score,position) "
                     "VALUES(%s,%s,%s,%s,%s,%s)", (wk, t, d, f, ms, wk))
+        # сид календаря курса
+        n = (await (await c.execute("SELECT COUNT(*) FROM calendar_events")).fetchone())[0]
+        if n == 0:
+            for wk, t, ty in CALENDAR_SEED:
+                await c.execute(
+                    "INSERT INTO calendar_events(week,date_label,title,type) VALUES(%s,'',%s,%s)",
+                    (wk, t, ty))
