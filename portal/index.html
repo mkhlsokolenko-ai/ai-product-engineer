@@ -278,9 +278,12 @@ async function vHome(){
      <span style="font-size:18px">${a.earned?a.icon:'🔒'}</span>
      <div style="min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title)}</div><div style="font-size:11px;color:var(--ink3)">${a.earned?'получено':'заблокировано'}</div></div></div>`).join("");
   const onb=(d.onboarding||[]);const onbDone=onb.filter(o=>o.done).length;
-  const onbHtml=onb.map(o=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:${o.done?'transparent':'var(--bg2)'}">
+  const onbTgt={login:"cabinet",mcp:"cabinet",rag:"cabinet",submit:"homework",file:"project"};
+  const onbHtml=onb.map(o=>{const t=onbTgt[o.key]||"cabinet";const clk=!o.done;
+    return `<div ${clk?`role="button" tabindex="0" onclick="go('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go('${t}')}"`:""} style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:${o.done?'transparent':'var(--bg2)'};${clk?'cursor:pointer':''}">
      <span style="width:18px;height:18px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:${o.done?'var(--ok-bg)':'var(--bg1)'};color:${o.done?'var(--ok)':'var(--ink3)'};flex-shrink:0">${o.done?'✓':''}</span>
-     <span style="font-size:13.5px;color:${o.done?'var(--ink3)':'var(--ink1)'};flex:1">${esc(o.title)}</span></div>`).join("");
+     <span style="font-size:13.5px;color:${o.done?'var(--ink3)':'var(--ink1)'};flex:1">${esc(o.title)}</span>
+     ${clk?`<span class="faint" style="white-space:nowrap">Перейти →</span>`:`<span class="faint mono">${esc(o.meta||"готово")}</span>`}</div>`;}).join("");
   const anns=(d.announcements||[]);
   $("dash").innerHTML=`
    <div class="card" style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
