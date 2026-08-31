@@ -198,7 +198,9 @@ async function vCabinet(){
    <div class="card"><div class="caps">Подключение OpenCode</div>
      <div class="muted" style="margin-bottom:8px">Единственная точка доступа к моделям — курсовой MCP-шлюз.</div>
      <div class="row"><span class="muted">MCP endpoint</span><span class="mono">https://mcp.engineer-ai.pro/mcp</span></div>
-     <div class="row"><span class="muted">Auth</span><span class="mono">Authorization: Bearer &lt;JWT&gt;</span></div>
+     <div class="row"><span class="muted">Auth</span><span class="mono">Authorization: Bearer &lt;твой токен&gt;</span></div>
+     <div style="margin:10px 0"><button class="btn sm" onclick="copyToken()">📋 Скопировать мой токен</button>
+       <span class="faint" style="margin-left:8px">короткоживущий — если MCP вернёт 401, зайди сюда и скопируй заново</span></div>
      <ol style="margin:10px 0 0;padding-left:18px;color:var(--text-2);font-size:13px;line-height:1.9">
        <li>Поставь OpenCode CLI (OSS, OpenAI-совместимый)</li>
        <li>Пропиши MCP-сервер выше + заголовок Authorization</li>
@@ -384,6 +386,12 @@ async function uploadFile(){
 }
 async function dlFile(name){ const r=await api("/api/storage/download-url?filename="+encodeURIComponent(name)); window.open(r.url,"_blank"); }
 async function delFile(name){ if(!confirm("Удалить "+name+"?"))return; await api("/api/storage/file?filename="+encodeURIComponent(name),{method:"DELETE"}); vProject(); }
+function copyToken(){
+  if(!TOKEN)return alert("Сначала войди");
+  navigator.clipboard.writeText(TOKEN).then(
+    ()=>alert("Токен скопирован. В OpenCode добавь заголовок:\nAuthorization: Bearer <вставь токен>\nПри 401 — вернись в Кабинет и скопируй заново."),
+    ()=>prompt("Скопируй токен вручную:",TOKEN));
+}
 
 $("btnGithub").onclick=()=>login("github");
 $("btnLogin").onclick=()=>login();
