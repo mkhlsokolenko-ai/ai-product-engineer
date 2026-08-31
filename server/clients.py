@@ -55,6 +55,10 @@ async def chat(
         }
         if response_format:
             payload["response_format"] = response_format
+        # Self-hosted Qwen3.8 — reasoning-модель: гасим "мышление вслух" в контенте,
+        # чтобы кодовый агент получал чистый код (vLLM пробрасывает в chat template).
+        if base_url == settings.local_llm_base_url and settings.local_llm_base_url:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         try:
             async with httpx.AsyncClient(timeout=120) as cli:
                 r = await cli.post(
