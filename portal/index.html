@@ -34,6 +34,11 @@ button,input,textarea,select{font-family:inherit}
 .mono{font-family:var(--mono)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes shimmer{100%{background-position:-100% 0}}
+.sk{border-radius:8px;background:linear-gradient(90deg,var(--bg2) 25%,var(--inset) 37%,var(--bg2) 63%);background-size:200% 100%;animation:shimmer 1.2s ease-in-out infinite;animation-direction:reverse}
+.sk-card{background:var(--bg1);border:1px solid var(--b1);border-radius:14px;box-shadow:var(--shadow);padding:20px;margin-bottom:14px}
+.empty{text-align:center;padding:30px 20px;color:var(--ink3)}
+.empty .ei{width:40px;height:40px;margin:0 auto 10px;color:var(--ink3);opacity:.7}
 /* топ-бар */
 .topbar{position:sticky;top:0;z-index:40;height:56px;background:var(--bg1);border-bottom:1px solid var(--b1);backdrop-filter:blur(8px)}
 .tbin{max-width:1200px;margin:0 auto;height:56px;padding:0 20px;display:flex;align-items:center;gap:12px}
@@ -264,6 +269,15 @@ function go(k){CUR=k;$("side").classList.remove("open");
   Promise.resolve().then(f).catch(e=>{$("view").innerHTML=`<div class="card" style="border-color:var(--warn);color:var(--warn)">Ошибка вкладки: ${esc(e.message)}</div>`;});
 }
 const view=h=>$("view").innerHTML=`<div class="view">${h}</div>`;
+// skeleton-заглушки (вместо «Загрузка…»)
+const skLine=(w='100%',h=14)=>`<div class="sk" style="width:${w};height:${h}px;margin:6px 0"></div>`;
+const skCard=(lines=3)=>`<div class="sk-card"><div class="sk" style="width:40%;height:16px;margin-bottom:14px"></div>${Array.from({length:lines},()=>skLine((60+Math.floor(Math.random()*35))+'%')).join("")}</div>`;
+const skTiles=(n=4)=>`<div class="tiles">${Array.from({length:n},()=>`<div class="tile"><div class="sk" style="width:60%;height:12px;margin-bottom:8px"></div><div class="sk" style="width:45%;height:22px"></div></div>`).join("")}</div>`;
+const skView=(cards=3)=>skTiles(3)+Array.from({length:cards},()=>skCard()).join("");
+// пустое состояние с иконкой и (опц.) CTA
+function empty(icon,text,cta,onclick){
+  return `<div class="empty">${icon?`<div class="ei">${ic(icon,40,1.6)}</div>`:""}<div>${esc(text)}</div>${cta?`<div style="margin-top:14px"><button class="btn sm" onclick="${onclick}">${esc(cta)}</button></div>`:""}</div>`;
+}
 
 // ══════════════ Главная ══════════════
 function ring(pct){pct=Math.max(0,Math.min(100,Math.round(pct)));const dash=(2*Math.PI*34*pct/100).toFixed(1)+" 999";
@@ -271,7 +285,7 @@ function ring(pct){pct=Math.max(0,Math.min(100,Math.round(pct)));const dash=(2*M
     <svg width="96" height="96" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34" fill="none" stroke="var(--inset)" stroke-width="8"/><circle cx="40" cy="40" r="34" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dash}" transform="rotate(-90 40 40)" style="transition:stroke-dasharray .3s"/></svg>
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:18px">${pct}%</div></div>`;}
 async function vHome(){
-  view(`<h2>Главная</h2><div id="dash" class="faint">Загрузка…</div>`);
+  view(`<h2>Главная</h2><div id="dash">${skView(4)}</div>`);
   const d=await api("/api/dashboard").catch(()=>({}));
   const cl=d.current_lecture||{}, nd=d.next_deadline;
   const ach=(d.achievements||[]).map(a=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--b1);border-radius:10px;background:${a.earned?'transparent':'var(--bg2)'};opacity:${a.earned?1:.5}">
@@ -315,7 +329,7 @@ async function vHome(){
 // ══════════════ Курс ══════════════
 let _lecOpen=null;
 async function vLectures(){
-  view(`<h2>Курс</h2><div id="lc" class="faint">Загрузка…</div>`);
+  view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
   const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
   const cw=d.week||0, done=ls.filter(x=>cw&&x.week<cw).length, pct=ls.length?Math.round(100*done/ls.length):0;
   if(_lecOpen==null)_lecOpen=cw||1;
@@ -355,7 +369,7 @@ function lecToggle(w){_lecOpen=_lecOpen===w?null:w;vLectures();}
 
 // ══════════════ Задания ══════════════
 async function vHomework(){
-  view(`<h2>Задания</h2><div id="hw" class="faint">Загрузка…</div>`);
+  view(`<h2>Задания</h2><div id="hw">${skCard(2)+skCard(2)+skCard(2)}</div>`);
   const [as,subs,grades]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/submissions").catch(()=>({})),api("/api/my/grades").catch(()=>({}))]);
   $("hw").innerHTML=as.map(a=>{
     const s=subs[a.id],g=grades[a.id];
@@ -376,7 +390,7 @@ async function vHomework(){
         <label class="lbl">Ссылка на решение (репозиторий, PR или документ)<input class="inp mono" id="u${a.id}" value="${s?esc(s.url):""}" placeholder="https://github.com/..." style="margin-top:6px"></label>
         <label class="lbl">Комментарий лектору<textarea class="ta" id="n${a.id}" rows="2" placeholder="Что стоит посмотреть в первую очередь" style="margin-top:6px">${s?esc(s.note):""}</textarea></label>
         <div><button class="btn primary" onclick="submitHw(${a.id})">${s?"Обновить сдачу":"Сдать"}</button></div></div>`:""}
-    </div>`;}).join("")||'<div class="faint">Пока пусто</div>';
+    </div>`;}).join("")||empty("homework","Заданий пока нет — появятся по мере курса.");
 }
 async function submitHw(id){const url=$("u"+id).value.trim();if(!url)return toast("Вставь ссылку на решение");
   await api("/api/my/submissions",{method:"POST",body:JSON.stringify({assignment_id:id,url,note:$("n"+id).value})});
@@ -384,7 +398,7 @@ async function submitHw(id){const url=$("u"+id).value.trim();if(!url)return toas
 
 // ══════════════ Мой проект ══════════════
 async function vProject(){
-  view(`<h2>Мой проект</h2><div id="pj" class="faint">Загрузка…</div>`);
+  view(`<h2>Мой проект</h2><div id="pj">${skView(2)}</div>`);
   let pr={},s={},u={};try{pr=await api("/api/my/project")}catch{}try{s=await api("/api/storage/my-files")}catch{}try{u=await api("/api/my-usage")}catch{}
   const files=s.files||[],wk=u.week||{};
   const tiles=[["Файлы",files.length,mb(s.used_bytes||0)+" МБ из 600"],["RAG-коллекция",ragCollection().length>18?"·":"—",ragCollection()],["Cost · неделя",(wk.cost_rub||0).toFixed(0)+" ₽",fmtN(wk.tokens_used)+" токенов"],["Токены","",fmtN(wk.tokens_used)]];
@@ -402,7 +416,7 @@ async function vProject(){
    <div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px"><div class="t18">Файлы проекта</div><div class="faint mono">${mb(s.used_bytes||0)} / 600 МБ</div></div>
      <div class="dz" id="pjDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите файлы или нажмите, чтобы выбрать</div><div class="faint" style="margin-top:2px">PDF, MD, IPYNB, ZIP · до 50 МБ на файл</div><input type="file" id="pjIn" multiple style="display:none"></div>
      <div id="pjMsg" class="faint" style="margin-bottom:8px"></div>
-     ${files.length?`<table><thead><tr><th>Файл</th><th>Размер</th><th></th></tr></thead><tbody>${files.map(f=>`<tr><td class="mono">${esc(f.name)}</td><td class="mono" style="color:var(--ink2)">${mb(f.size)} МБ</td><td style="text-align:right;white-space:nowrap"><a href="#" onclick="dlFile('${esc(f.name)}');return false" style="margin-right:12px">Скачать</a><button onclick="delFile('${esc(f.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></td></tr>`).join("")}</tbody></table>`:`<div style="text-align:center;padding:20px;color:var(--ink3)">Файлов нет. Загрузите артефакты — они попадут в вашу RAG-коллекцию.</div>`}</div>`;
+     ${files.length?`<table><thead><tr><th>Файл</th><th>Размер</th><th></th></tr></thead><tbody>${files.map(f=>`<tr><td class="mono">${esc(f.name)}</td><td class="mono" style="color:var(--ink2)">${mb(f.size)} МБ</td><td style="text-align:right;white-space:nowrap"><a href="#" onclick="dlFile('${esc(f.name)}');return false" style="margin-right:12px">Скачать</a><button onclick="delFile('${esc(f.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></td></tr>`).join("")}</tbody></table>`:empty("project","Файлов нет. Перетащите артефакты в зону выше — они попадут в вашу RAG-коллекцию.")}</div>`;
   wireDrop($("pjDz"),$("pjIn"),pjUpload);
 }
 async function saveProject(){await api("/api/my/project",{method:"POST",body:JSON.stringify({repo_url:$("prRepo").value,description:$("prDesc").value,status:$("prStatus").value})});toast("Проект сохранён");}
@@ -414,7 +428,7 @@ async function delFile(n){if(!confirm("Удалить "+n+"?"))return;await api(
 
 // ══════════════ Оценки ══════════════
 async function vGrades(){
-  view(`<h2>Оценки</h2><div id="gr" class="faint">Загрузка…</div>`);
+  view(`<h2>Оценки</h2><div id="gr">${skTiles(2)+skCard(5)}</div>`);
   const [as,grades]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/grades").catch(()=>({}))]);
   let tot=0,max=0;as.forEach(a=>{const g=grades[a.id];if(g&&g.score!=null){tot+=Number(g.score);}max+=a.max_score;});
   const rows=as.map(a=>{const g=grades[a.id];const has=g&&g.score!=null;const r=has?g.score/a.max_score:0;
@@ -423,12 +437,12 @@ async function vGrades(){
   $("gr").innerHTML=`<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
      <div><div class="caps">Итого баллов</div><div class="mono" style="font-size:30px;font-weight:700">${tot}<span style="color:var(--ink3);font-size:18px"> / ${max||100}</span></div></div>
      <div class="sub" style="max-width:320px">Проходной порог защиты — <span class="mono" style="color:var(--ink1);font-weight:600">60</span> баллов.</div></div>
-   <div class="card" style="margin-bottom:0"><table><thead><tr><th>Неделя</th><th>Задание</th><th>Оценка</th><th>Фидбэк</th></tr></thead><tbody>${rows||`<tr><td colspan="4" class="faint">Пусто</td></tr>`}</tbody></table></div>`;
+   <div class="card" style="margin-bottom:0"><table><thead><tr><th>Неделя</th><th>Задание</th><th>Оценка</th><th>Фидбэк</th></tr></thead><tbody>${rows||`<tr><td colspan="4"><div class="empty">Оценок пока нет. Сдайте первое задание.</div></td></tr>`}</tbody></table></div>`;
 }
 
 // ══════════════ Сообщество ══════════════
 async function vCommunity(){
-  view(`<h2>Сообщество</h2><div id="cm" class="faint">Загрузка…</div>`);
+  view(`<h2>Сообщество</h2><div id="cm">${skCard(2)+skCard(6)}</div>`);
   const [board,anns]=await Promise.all([api("/api/leaderboard").catch(()=>[]),api("/api/announcements").catch(()=>[])]);
   const me=CLAIMS.preferred_username||CLAIMS.name;const top=board.slice(0,8);const max=Math.max(...top.map(r=>r.tokens),1);
   const bars=top.map(r=>{const mine=r.username===me;const pct=Math.round(100*r.tokens/max);
@@ -440,13 +454,13 @@ async function vCommunity(){
   $("cm").innerHTML=`
    <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
    <div class="card"><div class="t18" style="margin-bottom:4px">Лидерборд по токенам · неделя</div><div class="sub" style="margin-bottom:16px">Кто активнее всех гоняет агентов. Не оценка — сигнал вовлечённости.</div>
-     <div style="display:flex;flex-direction:column;gap:8px">${bars||'<div class="faint">Нет данных</div>'}</div></div>
-   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Группа</div><table><thead><tr><th>#</th><th>Студент</th><th>Токены</th><th>Cost</th></tr></thead><tbody>${rows||`<tr><td colspan="4" class="faint">Нет данных</td></tr>`}</tbody></table></div>`;
+     <div style="display:flex;flex-direction:column;gap:8px">${bars||empty("community","Пока никто не набрал токенов на этой неделе.")}</div></div>
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Группа</div><table><thead><tr><th>#</th><th>Студент</th><th>Токены</th><th>Cost</th></tr></thead><tbody>${rows||`<tr><td colspan="4"><div class="empty">Группа наполнится после первых входов студентов.</div></td></tr>`}</tbody></table></div>`;
 }
 
 // ══════════════ Кабинет ══════════════
 async function vCabinet(){
-  view(`<h2>Кабинет</h2><div id="cab" class="faint">Загрузка…</div>`);
+  view(`<h2>Кабинет</h2><div id="cab">${skView(2)}</div>`);
   let u={},s={},p={},daily=[];try{u=await api("/api/my-usage")}catch{}try{s=await api("/api/storage/my-files")}catch{}try{p=await api("/api/progress")}catch{}try{daily=await api("/api/my/cost-daily")}catch{}
   const wk=u.week||{};const maxc=Math.max(...daily.map(x=>x.cost),0.01);const totc=daily.reduce((a,x)=>a+x.cost,0);
   const tiles=[["Токены · неделя",fmtN(wk.tokens_used),Math.round(wk.used_pct||0)+"% квоты"],["Хранилище",mb(s.used_bytes||0)+" МБ","из 600 МБ"],["Домашки",(p.accepted||0)+"/"+(p.assignments_total||0),"принято"],["Сессий",(u.sessions_this_week||{}).opened+"/"+(u.sessions_this_week||{}).limit,"на неделе"]];
@@ -472,7 +486,7 @@ let _adm={sub:"students"};
 const ASUBS=[["students","Студенты"],["kt","КТ и оценки"],["partners","Партнёры"],["calendar","Календарь"],["signals","Сигналы"],["materials","Материалы"],["notes","Заметки"],["announce","Анонсы"]];
 const ktSum=s=>{let sc=0,mx=0;(s.kt||[]).forEach(k=>{if(k.score!=null)sc+=k.score;mx+=k.max;});return[sc,mx];};
 async function vAdmin(){
-  view(`<h2>Командный центр</h2><div class="tiles" id="aTiles"></div><div class="subbar" id="aSub"></div><div id="aBody" class="faint">Загрузка…</div>`);
+  view(`<h2>Командный центр</h2><div class="tiles" id="aTiles"></div><div class="subbar" id="aSub"></div><div id="aBody">${skCard(4)}</div>`);
   $("aSub").innerHTML=ASUBS.map(([k,l])=>`<button class="subtab${_adm.sub===k?' active':''}" data-s="${k}">${l}</button>`).join("");
   $("aSub").querySelectorAll(".subtab").forEach(b=>b.onclick=()=>{_adm.sub=b.dataset.s;$("aSub").querySelectorAll(".subtab").forEach(x=>x.classList.toggle("active",x.dataset.s===_adm.sub));paintAdm();});
   const [roster,partners,cal,d]=await Promise.all([api("/api/admin/roster").catch(()=>({students:[],assignments:[]})),api("/api/admin/partners").catch(()=>[]),api("/api/admin/calendar").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
@@ -517,7 +531,7 @@ function admKt(){
          <input class="inp mono" id="sc_${s.student_id}_${s.assignment_id}" style="height:36px" placeholder="балл" value="${s.score!=null?s.score:""}">
          <select class="sel" id="stt_${s.student_id}_${s.assignment_id}" style="height:36px"><option value="accepted"${s.status==='accepted'?' selected':''}>принято</option><option value="revise"${s.status==='revise'?' selected':''}>на доработку</option><option value="submitted"${s.status==='submitted'?' selected':''}>сдано</option></select>
          <input class="inp" id="fb_${s.student_id}_${s.assignment_id}" style="height:36px" placeholder="фидбэк студенту" value="${esc(s.feedback||'')}">
-         <button class="btn sm" onclick="gradeHw('${s.student_id}',${s.assignment_id})">Сохранить</button></div></div>`).join("")||'<div class="faint">Сдач нет</div>'}`;
+         <button class="btn sm" onclick="gradeHw('${s.student_id}',${s.assignment_id})">Сохранить</button></div></div>`).join("")||empty("homework","Сдач на проверке нет — всё разобрано 🎉")}`;
   }).catch(()=>{$("aSubs").innerHTML='<div class="faint">Не удалось загрузить сдачи</div>';});
 }
 async function gradeHw(sid,aid){const sc=parseFloat($("sc_"+sid+"_"+aid).value);if(isNaN(sc))return toast("Укажи балл");
@@ -528,7 +542,7 @@ function admPartners(){
   aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="t18">Партнёры курса</div><button class="btn primary" onclick="addPartnerModal()">+ Добавить</button></div>
    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">${ps.map(p=>{const cnt=st.filter(s=>String(s.partner_id)===String(p.id)).length;
      return `<div style="border:1px solid var(--b1);border-radius:10px;padding:14px;position:relative"><button onclick="delPartner(${p.id})" aria-label="Удалить" style="position:absolute;top:8px;right:8px;width:24px;height:24px;border:0;border-radius:8px;background:none;color:var(--ink3);cursor:pointer;font-size:14px">×</button>
-       <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.name)}</div><div class="sub" style="font-size:12px">${esc(p.contact||"")}</div><div class="faint mono" style="margin-top:8px">${cnt} студента · ${esc(p.status||"")}</div></div>`;}).join("")||'<div class="faint">Партнёров нет</div>'}</div></div>`);
+       <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.name)}</div><div class="sub" style="font-size:12px">${esc(p.contact||"")}</div><div class="faint mono" style="margin-top:8px">${cnt} студента · ${esc(p.status||"")}</div></div>`;}).join("")||empty("community","Партнёров пока нет.","+ Добавить партнёра","addPartnerModal()")}</div></div>`);
 }
 async function delPartner(id){if(!confirm("Удалить партнёра?"))return;await api("/api/admin/partners/"+id,{method:"DELETE"});_adm.partners=await api("/api/admin/partners").catch(()=>[]);_adm.roster=await api("/api/admin/roster").catch(()=>_adm.roster);toast("Партнёр удалён");paintAdm();}
 function admCal(){
@@ -538,7 +552,7 @@ function admCal(){
      const dd=(e.date||"").split(" ");
      return `<div style="display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--b1);${past?'opacity:.6':''}"><div style="width:64px;flex-shrink:0;text-align:center" class="mono"><div style="font-size:18px;font-weight:700">${esc(dd[0]||("н"+e.week))}</div><div style="font-size:11px;color:var(--ink3);text-transform:uppercase">${esc(dd[1]||"")}</div></div>
        <div style="flex:1"><div style="font-size:13.5px;font-weight:500">${esc(e.title)}</div><div class="faint">неделя ${e.week}${now?' · сейчас':''}</div></div>${chip(cbg,cfg,kind)}
-       <button onclick="delEvent(${e.id})" style="border:0;background:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px">×</button></div>`;}).join("")||'<div class="faint">Событий нет</div>'}</div>`);
+       <button onclick="delEvent(${e.id})" style="border:0;background:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px">×</button></div>`;}).join("")||empty("lectures","В календаре пусто.","+ Добавить событие","addEventModal()")}</div>`);
 }
 async function delEvent(id){await api("/api/admin/calendar/"+id,{method:"DELETE"});_adm.cal=await api("/api/admin/calendar").catch(()=>[]);toast("Удалено");paintAdm();}
 function admSignals(){
@@ -553,14 +567,14 @@ function admSignals(){
 async function admMaterials(){
   aB(`<div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Материалы курса</div>
      <div class="dz" id="matDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите слайды и конспекты</div><div class="faint" style="margin-top:2px">Попадут в публичный бакет s3.engineer-ai.pro/materials</div><input type="file" id="matIn" multiple style="display:none"></div>
-     <div id="matMsg" class="faint" style="margin-bottom:8px"></div><div id="matList" class="faint">Загрузка…</div></div>`);
+     <div id="matMsg" class="faint" style="margin-bottom:8px"></div><div id="matList">${skLine("70%")+skLine("55%")+skLine("60%")}</div></div>`);
   wireDrop($("matDz"),$("matIn"),matUpload);refreshMat();
 }
 async function refreshMat(){const ms=await api("/api/admin/materials").catch(()=>[]);
   $("matList").className="";$("matList").innerHTML=ms.map(m=>`<div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1)"><a href="${esc(m.url)}" target="_blank" class="mono" style="flex:1;font-size:12.5px">${esc(m.name)}</a>
      <select class="sel" id="mw_${esc(m.name)}" style="height:32px;width:130px"><option value="">не привязан</option>${Array.from({length:15},(_,i)=>`<option value="${i+1}">неделя ${i+1}</option>`).join("")}</select>
      <button class="btn sm" onclick="attachMat('${esc(m.name)}','${esc(m.url)}')">Привязать</button>
-     <button onclick="delMat('${esc(m.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></div>`).join("")||'<div class="faint">Материалов нет</div>';
+     <button onclick="delMat('${esc(m.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></div>`).join("")||empty("lectures","Материалов нет — перетащите слайды в зону выше.");
 }
 async function matUpload(files){const msg=$("matMsg");for(const f of files){msg.textContent="Загрузка "+f.name+"…";try{const r=await api("/api/admin/material-upload-url?filename="+encodeURIComponent(f.name),{method:"POST"});const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error(put.status);}catch(e){msg.textContent="Ошибка: "+e;return;}}toast("Материал загружен");msg.textContent="";refreshMat();}
 async function attachMat(name,url){const w=$("mw_"+name).value;if(!w)return toast("Выбери неделю");await api("/api/admin/lecture-material",{method:"POST",body:JSON.stringify({week:parseInt(w),url})});toast("Материал привязан к неделе "+w);}
@@ -569,8 +583,8 @@ async function admNotes(){aB(`<div class="card" style="margin-bottom:0"><div sty
   const n=await api("/api/admin/notes").catch(()=>({body:""}));$("lnotes").value=n.body||"";
   $("lnotes").oninput=()=>{$("nState").textContent="сохранение…";clearTimeout(admNotes._t);admNotes._t=setTimeout(async()=>{await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nState").textContent="сохранено";},700);};}
 async function admAnnounce(){aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div><input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px"><textarea class="ta" id="annB" rows="3" placeholder="Текст анонса" style="margin-bottom:14px"></textarea><button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
-   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Опубликованные</div><div id="annList" class="faint">Загрузка…</div></div>`);
-  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||'<div class="faint">Пусто</div>';}
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Опубликованные</div><div id="annList">${skLine("50%")+skLine("80%")}</div></div>`);
+  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||empty(null,"Анонсов пока нет.");}
 async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value})});toast("Анонс опубликован");admAnnounce();}
 
 // ── Модалки ──
