@@ -211,11 +211,16 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT week,block,title,topic,materials_url FROM lectures ORDER BY position,week"
+            "SELECT week,block,title,topic,materials_url,outcomes,skills "
+            "FROM lectures ORDER BY position,week"
         )
         rows = await cur.fetchall()
+    from portal_api.store import BLOCK_NAMES
     return [
-        {"week": r[0], "block": r[1], "title": r[2], "topic": r[3], "materials_url": r[4]}
+        {"week": r[0], "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
+         "title": r[2], "topic": r[3], "materials_url": r[4],
+         "outcomes": [x for x in (r[5] or "").split("|") if x],
+         "skills": [x for x in (r[6] or "").split(",") if x]}
         for r in rows
     ]
 

@@ -120,6 +120,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const fmtN=n=>n>=1e6?(n/1e6).toFixed(1)+"M":Number(n||0).toLocaleString("ru-RU");
 const mb=b=>(b/1048576).toFixed(1);
+const ragCollection=()=>"ape_stu_"+String((CLAIMS.preferred_username||CLAIMS.sub||"me")).toLowerCase().replace(/[^a-z0-9_]/g,"_").slice(0,32);
 
 // ── OIDC PKCE ──
 const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -208,17 +209,53 @@ async function vCabinet(){
        <li>Первый вызов — токены пойдут в журнал</li></ol>
      <div style="margin-top:10px"><a href="https://github.com/mkhlsokolenko-ai/ai-product-engineer" target="_blank">Репозиторий курса и скиллы →</a></div></div>`;
 }
+let _lec=[], _asgW={}, _curWeek=0;
 async function vLectures(){
-  view(`<h2>Лекции</h2><div id="l">Загрузка…</div>`);
-  const ls=await api("/api/lectures").catch(()=>[]);
-  let h="",blk=null;
-  ls.forEach(x=>{ if(x.block!==blk){blk=x.block;h+=`<div class="lecblock">БЛОК ${blk}</div>`;}
-    h+=`<div class="card"><div style="display:flex;gap:12px;align-items:baseline">
-      <span class="badge b-blue">нед. ${x.week}</span><b>${esc(x.title)}</b></div>
+  view(`<h2>Карта курса</h2><div id="l">Загрузка…</div>`);
+  const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
+  _lec=ls; _asgW={}; as.forEach(a=>{(_asgW[a.week]=_asgW[a.week]||[]).push(a);});
+  _curWeek=d.week||0;                        // 0 = курс ещё не начался
+  const cw=_curWeek, done=ls.filter(x=>cw&&x.week<cw).length;
+  const nBlocks=[...new Set(ls.map(x=>x.block))].length;
+  let h=`<div class="card">
+     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+       <div><div class="caps" style="margin:0">Пройдено лекций</div><div class="big" style="font-size:24px">${done} <span class="muted" style="font-size:13px">/ ${ls.length}</span></div></div>
+       <div style="flex:1;min-width:160px"><div class="bar" style="height:8px"><i style="width:${ls.length?Math.round(100*done/ls.length):0}%"></i></div>
+         <div class="faint" style="margin-top:6px">${ls.length} лекций · ${nBlocks} блока · ${as.length} заданий · 15 недель</div></div>
+       <span class="badge b-blue">${cw?("идёт неделя "+cw):"курс ещё не начался"}</span></div>
+     <div class="faint" style="margin-top:10px">Нажми на лекцию — раскроются цели, навыки и связанное задание.</div></div>`;
+  let blk=null;
+  ls.forEach(x=>{
+    if(x.block!==blk){blk=x.block;h+=`<div class="lecblock">БЛОК ${blk} · ${esc(x.block_name||"")}</div>`;}
+    const st=cw&&x.week<cw?"past":cw&&x.week===cw?"now":"soon";
+    const mark=st==="past"?'<span class="badge b-ok">✓ пройдено</span>':st==="now"?'<span class="badge b-warn">● сейчас</span>':'';
+    const open=st==="now";
+    h+=`<div class="card"${st==="now"?' style="border-color:var(--accent-border);background:var(--accent-bg)"':st==="past"?' style="opacity:.78"':''}>
+      <div onclick="toggleLec(${x.week})" style="cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span class="badge b-blue">нед. ${x.week}</span><b>${esc(x.title)}</b>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">${mark}<span class="faint" id="chev${x.week}">${open?"▲":"▼"}</span></span></div>
       <div class="muted" style="margin-top:6px">${esc(x.topic)}</div>
-      ${x.materials_url?`<div style="margin-top:8px"><a href="${esc(x.materials_url)}">Материалы →</a></div>`:""}</div>`;});
+      <div id="det${x.week}"${open?"":' style="display:none"'}>${lecDetail(x)}</div></div>`;});
   $("l").innerHTML=h||"<div class='muted'>Пока пусто</div>";
 }
+function lecDetail(x){
+  const outs=x.outcomes||[], sk=(x.skills||[]).filter(Boolean), asg=_asgW[x.week]||[];
+  return `<div style="margin-top:12px;border-top:1px solid var(--border-1);padding-top:12px">
+    ${outs.length?`<div class="caps">Чему научишься</div><ul style="margin:6px 0 14px;padding:0;list-style:none">
+      ${outs.map(o=>`<li style="padding:3px 0;color:var(--text-2)"><span style="color:var(--ok)">✓</span> ${esc(o)}</li>`).join("")}</ul>`:""}
+    ${sk.length?`<div class="caps">Навыки · скиллы</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px">
+      ${sk.map(s=>`<span class="badge mono" style="background:var(--bg-2);color:var(--text-1)">${esc(s)}</span>`).join("")}</div>`:""}
+    ${asg.length?`<div class="caps">Связанное задание</div>${asg.map(a=>`<div class="card" style="background:var(--bg-2);margin:6px 0 0">
+        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><b>${esc(a.title)}</b><span class="faint mono">${a.fmt} · до ${a.max_score} б.</span></div>
+        <div class="muted" style="margin:4px 0">${esc(a.description)}</div>
+        <a href="#" onclick="go('homework');return false">Открыть в Заданиях →</a></div>`).join("")}`:""}
+    <div style="margin-top:12px">${x.materials_url
+      ?`<a href="${esc(x.materials_url)}" target="_blank">📄 Материалы лекции →</a>`
+      :'<span class="faint">Материалы появятся ближе к лекции</span>'}</div>
+  </div>`;
+}
+function toggleLec(w){const d=$("det"+w),c=$("chev"+w);if(!d)return;
+  const open=d.style.display==="none";d.style.display=open?"block":"none";if(c)c.textContent=open?"▲":"▼";}
 async function vHomework(){
   view(`<h2>Домашние задания</h2><div id="h">Загрузка…</div>`);
   const [as,subs]=await Promise.all([api("/api/assignments").catch(()=>[]),api("/api/my/submissions").catch(()=>({}))]);
@@ -265,18 +302,22 @@ async function vCommunity(){
      ${anns.length?anns.map(a=>`<div style="padding:8px 0;border-bottom:1px solid var(--border-1)"><b>${esc(a.title)}</b>
        <div class="muted">${esc(a.body)}</div><div class="faint" style="font-size:10.5px">${esc(a.by||"")}</div></div>`).join(""):`<div class="muted">Пока нет анонсов</div>`}</div>
    <div class="card"><div class="caps">Лидерборд · неделя</div>
+     <div class="faint" style="margin-bottom:8px">По объёму работы с моделями за текущую неделю. Ты подсвечен.</div>
      <table><tr><th>#</th><th>Студент</th><th>Токены</th><th>Стоимость</th></tr>
-     ${board.map((r,i)=>`<tr><td class="mono">${i+1}</td><td>${esc(r.username)}</td><td class="mono">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(2)} ₽</td></tr>`).join("")||`<tr><td colspan=4 class="muted">Нет данных</td></tr>`}</table></div>`;
+     ${board.map((r,i)=>{const me=r.username===(CLAIMS.preferred_username||CLAIMS.name);
+       return `<tr${me?' style="background:var(--accent-bg)"':''}><td class="mono">${i+1}</td><td>${esc(r.username)}${me?' <span class="badge b-blue" style="font-size:10px">ты</span>':''}</td><td class="mono">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(2)} ₽</td></tr>`;}).join("")||`<tr><td colspan=4 class="muted">Нет данных</td></tr>`}</table></div>`;
 }
 async function vAdmin(){
   view(`<h2>Админка</h2>
     <div class="card"><div class="caps">Новый анонс</div>
       <label>Заголовок</label><input id="annT" placeholder="Напр.: Лекция 4 перенесена">
-      <label>Текст</label><input id="annB">
+      <label>Текст</label><textarea id="annB" rows="3" placeholder="Появится на Главной и в Сообществе у всех студентов"></textarea>
       <div style="margin-top:10px"><button class="btn primary sm" onclick="postAnn()">Опубликовать</button></div></div>
-    <h2 style="margin-top:24px">Проверка заданий</h2><div id="a">Загрузка…</div>
+    <h2 style="margin-top:24px" id="subsH">Проверка заданий</h2><div id="a">Загрузка…</div>
     <h2 style="margin-top:24px">Расход по группе</h2><div id="cr"></div>`);
   const subs=await api("/api/admin/submissions").catch(()=>[]);
+  const pend=subs.filter(s=>s.status!=="accepted").length;
+  $("subsH").innerHTML=`Проверка заданий ${subs.length?`<span class="badge ${pend?'b-warn':'b-ok'}" style="font-size:11px;vertical-align:middle">${pend?pend+" ждут проверки":"все проверены"}</span>`:""}`;
   $("a").innerHTML=subs.map(s=>`<div class="card">
      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><b>${esc(s.username)}</b>
        <span class="muted">${esc(s.assignment)}</span>
@@ -324,8 +365,10 @@ async function vHome(){
      <div class="card"><div class="caps">Текущая лекция</div><b>${esc(cl.title||"—")}</b>
        <div class="muted" style="margin-top:4px">${esc(cl.topic||"")}</div>
        <div style="margin-top:10px"><a href="#" onclick="go('lectures');return false">Программа курса →</a></div></div>
-     <div class="card"><div class="caps">Ближайший дедлайн</div>
-       ${nd?`<b>${esc(nd.title)}</b><div class="muted" style="margin-top:4px">через ${nd.days_left} дн · неделя ${nd.week}</div>
+     <div class="card"${nd&&nd.days_left<=2?' style="border-color:var(--warn)"':''}><div class="caps">Ближайший дедлайн</div>
+       ${nd?`<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b>${esc(nd.title)}</b>
+         <span class="badge ${nd.days_left<=2?'b-warn':nd.days_left<=5?'b-blue':'b-ok'}">${nd.days_left<=0?'сегодня':'через '+nd.days_left+' дн'}</span></div>
+         <div class="muted" style="margin-top:4px">неделя ${nd.week}</div>
          <div style="margin-top:10px"><a href="#" onclick="go('homework');return false">К заданиям →</a></div>`:`<div class="muted">Нет открытых дедлайнов 🎉</div>`}</div></div>
    <div class="card"><div class="caps">Достижения</div>
      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
@@ -356,18 +399,16 @@ async function vProject(){
    <div class="grid g3">
      <div class="card"><div class="caps">Файлы</div><div class="big">${files.length}</div>
        <div class="muted">${mb(s.used_bytes||0)} / 600 МБ</div><div class="bar"><i style="width:${Math.min(100,s.used_pct||0)}%"></i></div></div>
-     <div class="card"><div class="caps">RAG-коллекция</div><div class="mono" style="font-size:12.5px;color:var(--accent)">ape_stu_&lt;твоя&gt;</div>
+     <div class="card"><div class="caps">RAG-коллекция</div><div class="mono" style="font-size:12.5px;color:var(--accent);word-break:break-all">${esc(ragCollection())}</div>
        <div class="muted" style="margin-top:8px">Индекс через MCP:<br>rag_index / rag_search</div></div>
      <div class="card"><div class="caps">Стоимость · неделя</div><div class="big">${(wk.cost_rub||0).toFixed(0)}<span style="font-size:14px"> ₽</span></div>
        <div class="muted">${fmtN(wk.tokens_used)} токенов</div></div>
      <div class="card"><div class="caps">Наблюдаемость</div><b>Langfuse</b><div class="muted" style="margin-top:6px">трейсы агента · скоро</div></div>
-     <div class="card"><div class="caps">Клиент</div><b>OpenCode CLI</b><div class="muted" style="margin-top:6px"><a href="#" onclick="go('cabinet');return false">как подключить →</a></div></div>
-     <div class="card"><div class="caps">Оценки</div><b>Успеваемость</b><div class="muted" style="margin-top:6px"><a href="#" onclick="go('grades');return false">смотреть →</a></div></div>
    </div>
    <div class="card"><div class="caps">Файлы проекта</div>
      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
        <input type="file" id="fileIn" style="flex:1;min-width:180px"><button class="btn primary" id="btnUp">Загрузить</button></div>
-     <div class="faint" style="margin-bottom:8px">Документы (PDF/DOCX/MD), датасеты, артефакты. Секреты/ПДн — нельзя.</div>
+     <div class="faint" style="margin-bottom:8px">Документы (PDF/DOCX/MD), датасеты, артефакты. Секреты/ПДн — нельзя. Свободно ${mb(s.remaining_bytes!=null?s.remaining_bytes:629145600)} МБ.</div>
      <table>${files.map(f=>`<tr><td>${esc(f.name)}</td><td class="mono">${mb(f.size)} МБ</td>
        <td style="text-align:right"><a href="#" onclick="dlFile('${esc(f.name)}');return false">скачать</a> · <a href="#" style="color:var(--crit)" onclick="delFile('${esc(f.name)}');return false">удалить</a></td></tr>`).join("")||`<tr><td colspan=3 class="muted">Файлов нет</td></tr>`}</table>
    </div>`;
@@ -379,10 +420,16 @@ async function saveProject(){
 }
 async function uploadFile(){
   const f=$("fileIn").files[0]; if(!f)return alert("Выбери файл");
-  let r; try{ r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);}
-  catch(e){return alert("Лимит хранилища исчерпан или ошибка");}
-  try{ const put=await fetch(r.url,{method:"PUT",body:f}); if(!put.ok)throw new Error(put.status); vProject(); }
-  catch(e){ alert("Не удалось загрузить. Проверь, что домен s3.engineer-ai.pro поднят (DNS). "+e); }
+  if(f.size>600*1048576)return alert("Файл больше 600 МБ — не влезет в квоту хранилища.");
+  const btn=$("btnUp"), was=btn.textContent; btn.disabled=true; btn.textContent="Загрузка…";
+  try{
+    const r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);
+    const put=await fetch(r.url,{method:"PUT",body:f}); if(!put.ok)throw new Error("S3 "+put.status);
+    vProject();
+  }catch(e){
+    btn.disabled=false; btn.textContent=was;
+    alert(String(e).includes("413")||String(e).includes("400")?"Лимит хранилища исчерпан.":"Не удалось загрузить: "+e+"\nПроверь, что s3.engineer-ai.pro доступен.");
+  }
 }
 async function dlFile(name){ const r=await api("/api/storage/download-url?filename="+encodeURIComponent(name)); window.open(r.url,"_blank"); }
 async function delFile(name){ if(!confirm("Удалить "+name+"?"))return; await api("/api/storage/file?filename="+encodeURIComponent(name),{method:"DELETE"}); vProject(); }

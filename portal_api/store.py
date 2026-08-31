@@ -6,7 +6,7 @@ from server import db
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lectures (
     id SERIAL PRIMARY KEY, week INT, block INT, title TEXT, topic TEXT,
-    materials_url TEXT, position INT DEFAULT 0
+    outcomes TEXT, skills TEXT, materials_url TEXT, position INT DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS assignments (
     id SERIAL PRIMARY KEY, week INT, title TEXT, description TEXT,
@@ -33,24 +33,81 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 """
 
-# 15 недель × 5 блоков (структура из программы v0.5)
+# 15 недель × 5 блоков (структура из программы v0.5).
+# Кортеж: week, block, title, topic, outcomes[], skills[], materials_url.
+# Контент авторитетен из кода — ensure() синхронизирует его в БД (UPSERT по week).
 LECTURES = [
-    (1, 1, "Вводная: обвязка курса", "MCP-шлюз, лимиты, cost, RAG, портал — как всё устроено", ""),
-    (2, 1, "Discovery и ICP", "ICP, JTBD, гипотеза ценности; интервью с представителем ICP", ""),
-    (3, 1, "Отбор идеи", "Глубинное исследование, оценка и выбор идеи; devil's advocate", ""),
-    (4, 2, "Workflow vs Agent", "Выбор архитектуры под задачу; границы агента", ""),
-    (5, 2, "Дизайн-документ и ADR", "MLSDD / Agent Design Doc; решения в формате ADR", ""),
-    (6, 2, "Prompt vs context engineering", "Хард-промпты, structured output; черновик cost-модели", ""),
-    (7, 3, "Первый агент: TDD", "Спека → тесты до кода → первый tool/агент", ""),
-    (8, 3, "Auth, latency, память", "Auth-схемы, контроль latency, двухуровневая память + дистилляция", ""),
-    (9, 3, "RAG и безопасность", "RAG-pipeline (chunk/embed/rerank), prompt injection, threat model", ""),
-    (10, 3, "Свой MCP-tool и observability", "Пишем свой инструмент; логи/метрики/трейсы", ""),
-    (11, 4, "Evals: три грейдера", "code / LLM-as-judge / human; метрики качества", ""),
-    (12, 4, "A/B промптов", "Версионирование промптов, прогон eval до/после", ""),
-    (13, 4, "Реальные пользователи", "Фидбэк, unit-экономика, стоимость на пользователя", ""),
-    (14, 5, "Подготовка защиты", "Pitch, демо, прожарка (grill-me)", ""),
-    (15, 5, "Финальная защита", "Защита pet-проекта перед группой и комиссией", ""),
+    (1, 1, "Вводная: обвязка курса", "MCP-шлюз, лимиты, cost, RAG, портал — как всё устроено",
+        ["Подключить OpenCode к курсовому MCP-шлюзу",
+         "Понимать лимиты токенов, cost-журнал и правила хранилища",
+         "Скопировать стартовые скиллы и сделать первый вызов"],
+        ["conventional-commits"], "https://s3.engineer-ai.pro/materials/lecture1.pdf"),
+    (2, 1, "Discovery и ICP", "ICP, JTBD, гипотеза ценности; интервью с представителем ICP",
+        ["Сформулировать ICP и его боль",
+         "Проверить гипотезу ценности в интервью",
+         "Отделить реальную потребность от придуманной"],
+        ["icp-interviewer", "jtbd-formulator"], ""),
+    (3, 1, "Отбор идеи", "Глубинное исследование, оценка и выбор идеи; devil's advocate",
+        ["Провести глубинное desk-исследование рынка",
+         "Оценить идеи по рубрике и выбрать одну",
+         "Пройти проверку «адвокатом дьявола»"],
+        ["researcher", "idea-scorer", "idea-selector", "devils-advocate"], ""),
+    (4, 2, "Workflow vs Agent", "Выбор архитектуры под задачу; границы агента",
+        ["Выбирать между workflow, агентом и гибридом",
+         "Задавать границы и зону ответственности агента"],
+        ["architecture-chooser"], ""),
+    (5, 2, "Дизайн-документ и ADR", "MLSDD / Agent Design Doc; решения в формате ADR",
+        ["Написать MLSDD / Agent Design Doc по шаблону",
+         "Фиксировать ключевые решения в формате ADR"],
+        ["mlsdd-writer", "agent-design-writer", "adr-writer"], ""),
+    (6, 2, "Prompt vs context engineering", "Хард-промпты, structured output; черновик cost-модели",
+        ["Различать prompt- и context-engineering",
+         "Надёжно получать structured output",
+         "Сделать черновик cost-модели"],
+        ["spec-reviewer", "cost-estimator"], ""),
+    (7, 3, "Первый агент: TDD", "Спека → тесты до кода → первый tool/агент",
+        ["Превратить спеку в тесты до кода",
+         "Собрать первый tool/агент по TDD"],
+        ["test-writer", "spec-reviewer"], ""),
+    (8, 3, "Auth, latency, память", "Auth-схемы, контроль latency, двухуровневая память + дистилляция",
+        ["Выбрать auth-схему и контролировать latency",
+         "Спроектировать двухуровневую память с дистилляцией"],
+        ["memory-architect"], ""),
+    (9, 3, "RAG и безопасность", "RAG-pipeline (chunk/embed/rerank), prompt injection, threat model",
+        ["Собрать RAG-pipeline: chunk / embed / rerank",
+         "Построить threat model и защиту от prompt injection"],
+        ["rag-architect"], ""),
+    (10, 3, "Свой MCP-tool и observability", "Пишем свой инструмент; логи/метрики/трейсы",
+        ["Написать собственный MCP-инструмент",
+         "Настроить логи, метрики и трейсы агента"],
+        ["fastapi-patterns", "docker-patterns"], ""),
+    (11, 4, "Evals: три грейдера", "code / LLM-as-judge / human; метрики качества",
+        ["Собрать eval-датасет из спеки",
+         "Настроить грейдеры: code / LLM-judge / human"],
+        ["eval-generator"], ""),
+    (12, 4, "A/B промптов", "Версионирование промптов, прогон eval до/после",
+        ["Версионировать промпты",
+         "Гонять eval до/после и фиксировать метрику в ADR"],
+        ["eval-generator", "adr-writer"], ""),
+    (13, 4, "Реальные пользователи", "Фидбэк, unit-экономика, стоимость на пользователя",
+        ["Собрать фидбэк реальных пользователей",
+         "Посчитать unit-экономику и стоимость на пользователя"],
+        ["unit-economics-checker", "cost-estimator"], ""),
+    (14, 5, "Подготовка защиты", "Pitch, демо, прожарка (grill-me)",
+        ["Собрать pitch и демо проекта",
+         "Пройти жёсткую прожарку (grill-me) и закрыть слабые места"],
+        ["grill-me"], ""),
+    (15, 5, "Финальная защита", "Защита pet-проекта перед группой и комиссией",
+        ["Защитить проект: демо + метрики + бизнес-модель",
+         "Ответить комиссии по качеству и стоимости"],
+        ["grill-me"], ""),
 ]
+
+# Названия блоков — для заголовков карты курса.
+BLOCK_NAMES = {
+    1: "Discovery и продукт", 2: "Проектирование", 3: "Инженерия агента",
+    4: "Оценка и экономика", 5: "Защита",
+}
 
 # fmt: repo|md|pr
 ASSIGNMENTS = [
@@ -65,15 +122,22 @@ ASSIGNMENTS = [
 
 
 async def ensure() -> None:
-    """Создаёт таблицы и засевает лекции/домашки при первом запуске."""
+    """Создаёт таблицы, мигрирует колонки и синхронизирует лекции (контент из кода)."""
     async with db._conn() as c:  # noqa: SLF001
         await c.execute(SCHEMA)
-        n = (await (await c.execute("SELECT COUNT(*) FROM lectures")).fetchone())[0]
-        if n == 0:
-            for wk, bl, t, tp, u in LECTURES:
-                await c.execute(
-                    "INSERT INTO lectures(week,block,title,topic,materials_url,position) "
-                    "VALUES(%s,%s,%s,%s,%s,%s)", (wk, bl, t, tp, u, wk))
+        # миграция старой схемы lectures без outcomes/skills
+        await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS outcomes TEXT")
+        await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS skills TEXT")
+        await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_lectures_week ON lectures(week)")
+        # UPSERT по неделе: код — источник правды для программы курса
+        for wk, bl, t, tp, outs, sk, u in LECTURES:
+            await c.execute(
+                "INSERT INTO lectures(week,block,title,topic,outcomes,skills,materials_url,position) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(week) DO UPDATE SET block=EXCLUDED.block, title=EXCLUDED.title, "
+                "topic=EXCLUDED.topic, outcomes=EXCLUDED.outcomes, skills=EXCLUDED.skills, "
+                "materials_url=EXCLUDED.materials_url, position=EXCLUDED.position",
+                (wk, bl, t, tp, "|".join(outs), ",".join(sk), u, wk))
         n = (await (await c.execute("SELECT COUNT(*) FROM assignments")).fetchone())[0]
         if n == 0:
             for wk, t, d, f, ms in ASSIGNMENTS:
