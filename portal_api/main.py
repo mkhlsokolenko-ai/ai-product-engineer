@@ -80,6 +80,7 @@ class NotesIn(BaseModel):
 class LectureMaterialIn(BaseModel):
     week: int
     url: str = ""
+    title: str = ""
 
 
 def _mc(public: bool) -> Minio:
@@ -248,10 +249,16 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
             "FROM lectures ORDER BY position,week"
         )
         rows = await cur.fetchall()
+        mrows = await (await c.execute(
+            "SELECT id,lecture_week,title,url FROM lecture_materials ORDER BY id")).fetchall()
+    mats: dict[int, list] = {}
+    for mid, wk, title, url in mrows:
+        mats.setdefault(wk, []).append({"id": mid, "title": title, "url": url})
     from portal_api.store import BLOCK_NAMES
     return [
         {"week": r[0], "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
          "title": r[2], "topic": r[3], "materials_url": r[4],
+         "materials": mats.get(r[0], []),
          "outcomes": [x for x in (r[5] or "").split("|") if x],
          "skills": [x for x in (r[6] or "").split(",") if x]}
         for r in rows
@@ -672,7 +679,49 @@ async def del_material(filename: str, claims: dict = Depends(require_staff)) -> 
 
 
 @app.post("/api/admin/lecture-material")
-async def set_lecture_material(body: LectureMaterialIn, claims: dict = Depends(require_staff)) -> dict:
+async def attach_lecture_material(body: LectureMaterialIn, claims: dict = Depends(require_staff)) -> dict:
+    """Привязать материал к лекции (добавляет в список, не перезаписывает)."""
+    if not body.url:
+        raise HTTPException(status_code=400, detail="url обязателен")
+    title = body.title or body.url.rsplit("/", 1)[-1] or "Материалы"
     async with db._conn() as c:  # noqa: SLF001
-        await c.execute("UPDATE lectures SET materials_url=%s WHERE week=%s", (body.url, body.week))
+        exists = (await (await c.execute(
+            "SELECT COUNT(*) FROM lecture_materials WHERE lecture_week=%s AND url=%s",
+            (body.week, body.url))).fetchone())[0]
+        if not exists:
+            await c.execute(
+                "INSERT INTO lecture_materials(lecture_week,title,url) VALUES(%s,%s,%s)",
+                (body.week, title, body.url))
+        # держим materials_url как «первый» материал для обратной совместимости
+        await c.execute(
+            "UPDATE lectures SET materials_url=COALESCE(NULLIF(materials_url,''),%s) WHERE week=%s",
+            (body.url, body.week))
+    return {"ok": True}
+
+
+@app.get("/api/admin/lecture-materials")
+async def list_lecture_materials(claims: dict = Depends(require_staff)) -> list[dict]:
+    """Все привязки материал→лекция (для админки)."""
+    async with db._conn() as c:  # noqa: SLF001
+        rows = await (await c.execute(
+            "SELECT m.id, m.lecture_week, m.title, m.url, l.title "
+            "FROM lecture_materials m LEFT JOIN lectures l ON l.week=m.lecture_week "
+            "ORDER BY m.lecture_week, m.id")).fetchall()
+    return [{"id": r[0], "week": r[1], "title": r[2], "url": r[3], "lecture": r[4]} for r in rows]
+
+
+@app.delete("/api/admin/lecture-material/{mid}")
+async def detach_lecture_material(mid: int, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT lecture_week, url FROM lecture_materials WHERE id=%s", (mid,))).fetchone()
+        await c.execute("DELETE FROM lecture_materials WHERE id=%s", (mid,))
+        if row:
+            wk, url = row
+            # если это был materials_url лекции — заменить на другой оставшийся (или очистить)
+            nxt = await (await c.execute(
+                "SELECT url FROM lecture_materials WHERE lecture_week=%s ORDER BY id LIMIT 1",
+                (wk,))).fetchone()
+            await c.execute("UPDATE lectures SET materials_url=%s WHERE week=%s AND materials_url=%s",
+                            (nxt[0] if nxt else "", wk, url))
     return {"ok": True}

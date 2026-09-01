@@ -353,8 +353,9 @@ async function vLectures(){
             ${(l.outcomes||[]).map(x=>`<div style="display:flex;gap:8px;font-size:13.5px;color:var(--ink2);margin-bottom:6px"><span style="flex-shrink:0;margin-top:3px">${ic('chev'?'':'')}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L19 7"/></svg></span>${esc(x)}</div>`).join("")||'<div class="faint">—</div>'}</div>
           <div><div class="caps" style="margin-bottom:8px">Навыки</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">${(l.skills||[]).map(sk=>`<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${esc(sk)}</span>`).join("")}</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">${asg?`<button class="btn sm" onclick="go('homework')">Открыть в Заданиях</button>`:""}
-              ${l.materials_url?`<a class="btn sm primary" href="${esc(l.materials_url)}" target="_blank" style="text-decoration:none">Материалы</a>`:""}</div></div>
+            ${(l.materials&&l.materials.length)?`<div class="caps" style="margin-bottom:8px">Материалы</div>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">${l.materials.map(m=>`<a href="${esc(m.url)}" target="_blank" style="display:flex;align-items:center;gap:8px;font-size:13px">${ic('lectures',15)}${esc(m.title)}</a>`).join("")}</div>`:`<div class="faint" style="margin-bottom:14px">Материалы появятся ближе к лекции</div>`}
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${asg?`<button class="btn sm" onclick="go('homework')">Открыть в Заданиях</button>`:""}</div></div>
         </div></div>`:""}
       </div>`;
     });
@@ -566,21 +567,35 @@ function admSignals(){
   aB(`<div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:4px">Сигналы</div><div class="faint" style="margin-bottom:14px">Автоматические риски. Список read-only — действие в разделе, на который он ведёт.</div>
    ${sig.map(([tag,who,detail,k])=>{const[bg,fg]=CH[k==='crit'?'risk':'doing'];return `<div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:${bg};margin-bottom:8px"><span class="chip" style="background:var(--bg1);color:${fg}">${tag}</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">${esc(who)}</div><div class="sub" style="font-size:12px">${detail}</div></div></div>`;}).join("")||'<div style="text-align:center;padding:30px" class="faint">Всё в норме · рисков нет 🎉</div>'}</div>`);
 }
+let _lecOpts="";
 async function admMaterials(){
-  aB(`<div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Материалы курса</div>
+  aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Файлы материалов</div>
      <div class="dz" id="matDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите слайды и конспекты</div><div class="faint" style="margin-top:2px">Попадут в публичный бакет s3.engineer-ai.pro/materials</div><input type="file" id="matIn" multiple style="display:none"></div>
-     <div id="matMsg" class="faint" style="margin-bottom:8px"></div><div id="matList">${skLine("70%")+skLine("55%")+skLine("60%")}</div></div>`);
-  wireDrop($("matDz"),$("matIn"),matUpload);refreshMat();
+     <div id="matMsg" class="faint" style="margin-bottom:8px"></div><div id="matList">${skLine("70%")+skLine("55%")+skLine("60%")}</div></div>
+   <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:4px">Привязки к лекциям</div><div class="faint" style="margin-bottom:14px">Материал появится в плане курса у выбранной лекции сразу после привязки.</div><div id="lmList">${skLine("60%")+skLine("70%")}</div></div>`);
+  wireDrop($("matDz"),$("matIn"),matUpload);
+  const lecs=await api("/api/lectures").catch(()=>[]);
+  _lecOpts=lecs.map(l=>`<option value="${l.week}">нед ${l.week} · ${esc(l.title)}</option>`).join("");
+  refreshMat();refreshLM();
 }
 async function refreshMat(){const ms=await api("/api/admin/materials").catch(()=>[]);
-  $("matList").className="";$("matList").innerHTML=ms.map(m=>`<div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1)"><a href="${esc(m.url)}" target="_blank" class="mono" style="flex:1;font-size:12.5px">${esc(m.name)}</a>
-     <select class="sel" id="mw_${esc(m.name)}" style="height:32px;width:130px"><option value="">не привязан</option>${Array.from({length:15},(_,i)=>`<option value="${i+1}">неделя ${i+1}</option>`).join("")}</select>
+  $("matList").className="";$("matList").innerHTML=ms.map(m=>`<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1);flex-wrap:wrap"><a href="${esc(m.url)}" target="_blank" class="mono" style="flex:1;min-width:160px;font-size:12.5px">${esc(m.name)}</a>
+     <select class="sel" id="mw_${esc(m.name)}" style="height:32px;width:auto;min-width:180px"><option value="">— лекция —</option>${_lecOpts}</select>
      <button class="btn sm" onclick="attachMat('${esc(m.name)}','${esc(m.url)}')">Привязать</button>
      <button onclick="delMat('${esc(m.name)}')" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Удалить</button></div>`).join("")||empty("lectures","Материалов нет — перетащите слайды в зону выше.");
 }
+async function refreshLM(){const lm=await api("/api/admin/lecture-materials").catch(()=>[]);
+  $("lmList").className="";
+  $("lmList").innerHTML=lm.map(m=>`<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1)">
+     <span class="chip" style="background:var(--accent-bg);color:var(--accent)">нед ${m.week}</span>
+     <a href="${esc(m.url)}" target="_blank" style="flex:1;font-size:13px">${esc(m.title)}</a>
+     <span class="faint" style="font-size:11.5px">${esc(m.lecture||"")}</span>
+     <button onclick="detachLM(${m.id})" style="border:0;background:none;color:var(--crit);font-size:12px;cursor:pointer;padding:4px">Отвязать</button></div>`).join("")||empty(null,"Пока ничего не привязано. Выбери лекцию у файла выше и нажми «Привязать».");
+}
 async function matUpload(files){const msg=$("matMsg");for(const f of files){msg.textContent="Загрузка "+f.name+"…";try{const r=await api("/api/admin/material-upload-url?filename="+encodeURIComponent(f.name),{method:"POST"});const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error(put.status);}catch(e){msg.textContent="Ошибка: "+e;return;}}toast("Материал загружен");msg.textContent="";refreshMat();}
-async function attachMat(name,url){const w=$("mw_"+name).value;if(!w)return toast("Выбери неделю");await api("/api/admin/lecture-material",{method:"POST",body:JSON.stringify({week:parseInt(w),url})});toast("Материал привязан к неделе "+w);}
-async function delMat(name){if(!confirm("Удалить "+name+"?"))return;await api("/api/admin/material?filename="+encodeURIComponent(name),{method:"DELETE"});toast("Файл удалён");refreshMat();}
+async function attachMat(name,url){const w=$("mw_"+name).value;if(!w)return toast("Выбери лекцию");await api("/api/admin/lecture-material",{method:"POST",body:JSON.stringify({week:parseInt(w),url,title:name})});toast("Привязано к лекции "+w);refreshLM();}
+async function detachLM(id){await api("/api/admin/lecture-material/"+id,{method:"DELETE"});toast("Отвязано");refreshLM();}
+async function delMat(name){if(!confirm("Удалить файл "+name+" из хранилища?"))return;await api("/api/admin/material?filename="+encodeURIComponent(name),{method:"DELETE"});toast("Файл удалён");refreshMat();}
 async function admNotes(){aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px"><div class="t18">Заметки лектора</div><span class="faint mono" id="nState"></span></div><textarea class="ta" id="lnotes" rows="12" style="line-height:1.6" placeholder="Приватные заметки по группе — автосохранение"></textarea></div>`);
   const n=await api("/api/admin/notes").catch(()=>({body:""}));$("lnotes").value=n.body||"";
   $("lnotes").oninput=()=>{$("nState").textContent="сохранение…";clearTimeout(admNotes._t);admNotes._t=setTimeout(async()=>{await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nState").textContent="сохранено";},700);};}

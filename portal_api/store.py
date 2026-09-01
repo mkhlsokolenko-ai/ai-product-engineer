@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS lectures (
     id SERIAL PRIMARY KEY, week INT, block INT, title TEXT, topic TEXT,
     outcomes TEXT, skills TEXT, materials_url TEXT, position INT DEFAULT 0
 );
+-- Материалы, привязанные к конкретной лекции (много на лекцию). lecture_week = lectures.week.
+CREATE TABLE IF NOT EXISTS lecture_materials (
+    id SERIAL PRIMARY KEY, lecture_week INT NOT NULL, title TEXT, url TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lm_week ON lecture_materials (lecture_week);
 CREATE TABLE IF NOT EXISTS assignments (
     id SERIAL PRIMARY KEY, week INT, title TEXT, description TEXT,
     fmt TEXT, max_score INT DEFAULT 10, position INT DEFAULT 0
@@ -173,6 +179,19 @@ async def ensure() -> None:
                 await c.execute(
                     "INSERT INTO assignments(week,title,description,fmt,max_score,position) "
                     "VALUES(%s,%s,%s,%s,%s,%s)", (wk, t, d, f, ms, wk))
+        # миграция: перенести legacy materials_url лекций в lecture_materials (идемпотентно)
+        legacy = await (await c.execute(
+            "SELECT week, materials_url FROM lectures "
+            "WHERE materials_url IS NOT NULL AND materials_url <> ''")).fetchall()
+        for wk, url in legacy:
+            exists = (await (await c.execute(
+                "SELECT COUNT(*) FROM lecture_materials WHERE lecture_week=%s AND url=%s",
+                (wk, url))).fetchone())[0]
+            if not exists:
+                title = url.rsplit("/", 1)[-1] or "Материалы"
+                await c.execute(
+                    "INSERT INTO lecture_materials(lecture_week,title,url) VALUES(%s,%s,%s)",
+                    (wk, title, url))
         # сид календаря курса
         n = (await (await c.execute("SELECT COUNT(*) FROM calendar_events")).fetchone())[0]
         if n == 0:
