@@ -22,6 +22,7 @@ import http.server
 import json
 import os
 import secrets
+import ssl
 import sys
 import threading
 import time
@@ -133,8 +134,20 @@ def login(idp: str | None = "github") -> None:
 def _post_form(url: str, data: bytes) -> dict:
     req = urllib.request.Request(url, data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    last = None
+    for attempt in range(4):  # ретрай на TLS-reset/сетевых сбоях (DPI/антивирус)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.load(r)
+        except urllib.error.HTTPError:
+            raise
+        except (ssl.SSLError, urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            last = e
+            if attempt < 3:
+                time.sleep(1.5 * (attempt + 1))
+    raise SystemExit(col(
+        f"Не удалось соединиться с auth.engineer-ai.pro (TLS сброшен: {last}).\n"
+        "Проверь сеть/антивирус/VPN и повтори.", "red"))
 
 
 def _store_tokens(tok: dict) -> None:
@@ -198,12 +211,30 @@ def _mcp_call(tool: str, args: dict) -> dict:
         if sid["v"]:
             hdr["mcp-session-id"] = sid["v"]
         req = urllib.request.Request(MCP, data=json.dumps(body).encode(), headers=hdr)
-        try:
-            r = urllib.request.urlopen(req, timeout=300)
-        except urllib.error.HTTPError as e:
-            if e.code == 401 and retry and _refresh():
-                return rpc(method, params, notify, retry=False)
-            sys.exit(col(f"Шлюз вернул {e.code}. Попробуй ape login заново.", "red"))
+        # DPI/провайдер/антивирус иногда рвут TLS на рукопожатии (UNEXPECTED_EOF) —
+        # ретраим с бэкоффом: reset вероятностный, обычно пробивается со 2-3 попытки.
+        last = None
+        for attempt in range(4):
+            try:
+                r = urllib.request.urlopen(req, timeout=120)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and retry and _refresh():
+                    return rpc(method, params, notify, retry=False)
+                sys.exit(col(f"Шлюз вернул {e.code}. Попробуй войти заново: ape login", "red"))
+            except (ssl.SSLError, urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                last = e
+                if attempt < 3:
+                    print(col(f"…сеть нестабильна, повтор {attempt + 2}/4", "gray"), file=sys.stderr)
+                    time.sleep(1.5 * (attempt + 1))
+        else:
+            sys.exit(col(
+                "Не удалось соединиться с mcp.engineer-ai.pro (TLS-соединение сброшено).\n"
+                "Обычно это блокировка/антивирус/сеть на твоей стороне. Попробуй:\n"
+                "  • запустить команду ещё раз (часто помогает со 2–3 попытки);\n"
+                "  • временно выключить проверку HTTPS в антивирусе или VPN;\n"
+                "  • другую сеть (мобильный интернет как точку доступа).\n"
+                f"Детали: {last}", "red"))
         if not sid["v"] and r.headers.get("mcp-session-id"):
             sid["v"] = r.headers.get("mcp-session-id")
         if notify:
