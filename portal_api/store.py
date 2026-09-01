@@ -6,7 +6,7 @@ from server import db
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lectures (
     id SERIAL PRIMARY KEY, week INT, block INT, title TEXT, topic TEXT,
-    outcomes TEXT, skills TEXT, materials_url TEXT, position INT DEFAULT 0
+    outcomes TEXT, skills TEXT, materials_url TEXT, practice TEXT, position INT DEFAULT 0
 );
 -- Материалы, привязанные к конкретной лекции (много на лекцию). lecture_week = lectures.week.
 CREATE TABLE IF NOT EXISTS lecture_materials (
@@ -144,6 +144,19 @@ BLOCK_NAMES = {
     4: "Оценка и экономика", 5: "Защита",
 }
 
+# Мини-задания «к следующей паре» — практика, НЕ оценка/КТ. Для недель без формального ДЗ.
+PRACTICE = {
+    2: "Проведи одно интервью с представителем ICP через icp-interviewer. Выпиши 3 неожиданных инсайта и одну боль, которую раньше недооценивал.",
+    4: "Для своей идеи реши: workflow, agent или гибрид (через architecture-chooser). Обоснуй выбор в 5 строк и назови границы агента.",
+    6: "Возьми один свой промпт и перепиши его как спецификацию со structured output (JSON-схема). Сравни ответ до и после.",
+    7: "Выбери одну функцию проекта: напиши тесты ДО кода (TDD), затем реализуй так, чтобы они прошли. Приложи ссылку на коммит.",
+    8: "Набросай схему памяти агента: что держим в системном промпте, что в контексте, что дистиллируем. Прикинь бюджет latency на один шаг.",
+    9: "Собери мини-RAG на 5 своих документах, померь recall@3 на 5 вопросах. Отметь одно место, уязвимое к prompt injection.",
+    11: "Составь eval-набор на 10 кейсов: для каждого укажи тип грейдера (code / LLM-judge / human) и ожидаемый результат.",
+    12: "Сделай A/B двух версий одного промпта на своём eval-наборе. Зафиксируй метрику до/после в ADR.",
+    14: "Прогони свою защиту через grill-me. Выпиши 3 слабых места и план, как закрыть каждое до финала.",
+}
+
 # fmt: repo|md|pr
 ASSIGNMENTS = [
     (1, "ДЗ-1: 5 идей проекта", "5 проработанных идей в формате .md, применив глубинное исследование "
@@ -163,16 +176,17 @@ async def ensure() -> None:
         # миграция старой схемы lectures без outcomes/skills
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS outcomes TEXT")
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS skills TEXT")
+        await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS practice TEXT")
         await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_lectures_week ON lectures(week)")
         # UPSERT по неделе: код — источник правды для программы курса
         for wk, bl, t, tp, outs, sk, u in LECTURES:
             await c.execute(
-                "INSERT INTO lectures(week,block,title,topic,outcomes,skills,materials_url,position) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                "INSERT INTO lectures(week,block,title,topic,outcomes,skills,materials_url,practice,position) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT(week) DO UPDATE SET block=EXCLUDED.block, title=EXCLUDED.title, "
                 "topic=EXCLUDED.topic, outcomes=EXCLUDED.outcomes, skills=EXCLUDED.skills, "
-                "materials_url=EXCLUDED.materials_url, position=EXCLUDED.position",
-                (wk, bl, t, tp, "|".join(outs), ",".join(sk), u, wk))
+                "materials_url=EXCLUDED.materials_url, practice=EXCLUDED.practice, position=EXCLUDED.position",
+                (wk, bl, t, tp, "|".join(outs), ",".join(sk), u, PRACTICE.get(wk, ""), wk))
         n = (await (await c.execute("SELECT COUNT(*) FROM assignments")).fetchone())[0]
         if n == 0:
             for wk, t, d, f, ms in ASSIGNMENTS:

@@ -245,7 +245,7 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT week,block,title,topic,materials_url,outcomes,skills "
+            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice "
             "FROM lectures ORDER BY position,week"
         )
         rows = await cur.fetchall()
@@ -260,7 +260,8 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
          "title": r[2], "topic": r[3], "materials_url": r[4],
          "materials": mats.get(r[0], []),
          "outcomes": [x for x in (r[5] or "").split("|") if x],
-         "skills": [x for x in (r[6] or "").split(",") if x]}
+         "skills": [x for x in (r[6] or "").split(",") if x],
+         "practice": r[7] or ""}
         for r in rows
     ]
 

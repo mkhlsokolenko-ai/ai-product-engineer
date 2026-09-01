@@ -392,6 +392,11 @@ async function vLectures(){
                 <span class="faint mono" style="margin-left:auto">${esc(asg.fmt)} · до ${asg.max_score} б.</span></div>
               <div class="sub" style="font-size:12.5px;margin-bottom:12px">${esc(asg.description)}</div>
               <button class="btn primary sm" onclick="go('homework')">Открыть и сдать →</button></div>`:""}
+          ${l.practice?`<div class="caps" style="margin:20px 0 8px">Мини-задание к следующей паре</div>
+            <div style="border:1px dashed var(--b2);border-radius:10px;padding:14px;display:flex;gap:10px;align-items:flex-start">
+              <span style="flex-shrink:0;margin-top:1px">${ic('homework',16)}</span>
+              <div><div class="sub" style="font-size:12.5px">${esc(l.practice)}</div>
+              <div class="faint" style="margin-top:6px">Практика — не оценивается, но без неё следующая лекция «поедет». Делай через ape.</div></div></div>`:""}
         </div>`:""}
       </div>`;
     });
