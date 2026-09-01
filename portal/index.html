@@ -327,6 +327,30 @@ async function vHome(){
 }
 
 // ══════════════ Курс ══════════════
+// Каталог скиллов: что делает и зачем (для раскрытой лекции)
+const SKILLS={
+ "researcher":["Направленное desk-исследование","Собрать контекст рынка, данных и аналогов, чтобы решать реальную задачу, а не придуманную"],
+ "icp-interviewer":["Симуляция интервью с ICP","Прожать гипотезу ценности до кода — на «представителе» твоего пользователя"],
+ "jtbd-formulator":["Формулировка Job To Be Done","Понять, какую работу нанимают твой продукт делать — фокус на пользе, не на фичах"],
+ "idea-scorer":["Оценка идеи по рубрике","Свести интуицию к баллам (боль, данные, экономика) — сравнимо и честно"],
+ "idea-selector":["Выбор лучшей из нескольких","Обоснованно отобрать одну идею, а не влюбиться в первую попавшуюся"],
+ "devils-advocate":["Жёсткая критика без похвалы","Найти, где идея умрёт, пока это дёшево — до вложений времени"],
+ "architecture-chooser":["Workflow vs Agent vs Hybrid","Выбрать архитектуру под задачу, не усложняя там, где хватит пайплайна"],
+ "mlsdd-writer":["ML System Design Doc","Спроектировать систему на бумаге до кода — границы, данные, риски, метрики"],
+ "agent-design-writer":["Дизайн агента","Явно задать инструменты, память и деградацию — чтобы агент не зациклился"],
+ "adr-writer":["ADR (Architecture Decision Record)","Зафиксировать «почему так решили» — чтобы через месяц не переспорить самого себя"],
+ "spec-reviewer":["Ревью полноты спеки","Поймать дыры в acceptance-критериях до того, как они станут багами"],
+ "cost-estimator":["Оценка стоимости user-flow","Посчитать токены и рубли на сценарий — экономика с первого дня"],
+ "test-writer":["Тесты ДО реализации (TDD)","Спека → тесты → код: агент пишет под проверяемую цель, а не «как понял»"],
+ "memory-architect":["Двухуровневая память","Спроектировать память агента с дистилляцией — контекст не раздувается"],
+ "rag-architect":["Проектирование RAG-pipeline","Chunk/embed/rerank под домен + оценка качества retrieval"],
+ "eval-generator":["Eval-датасет + грейдеры","Мерить качество (code/LLM-judge/human), а не «на глаз» — ключевой навык FDE"],
+ "unit-economics-checker":["Проверка unit-экономики","Найти дыры в экономике на пользователя до того, как масштабируешь убыток"],
+ "grill-me":["Безжалостный допрос","Прожарка плана/защиты по дереву решений — репетиция перед комиссией"],
+ "conventional-commits":["Дисциплина коммитов","Читаемая история изменений — стандарт, который агент соблюдает сам"],
+ "fastapi-patterns":["Паттерны FastAPI","Собрать сервис по best practices, а не копипастой из туториала"],
+ "docker-patterns":["Паттерны Docker","Воспроизводимое окружение — «работает у меня» больше не аргумент"],
+};
 let _lecOpen=null;
 async function vLectures(){
   view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
@@ -348,15 +372,27 @@ async function vLectures(){
           <span style="font-size:14px;font-weight:600;flex:1">${esc(l.title)}</span>
           ${chip(cbg,cfg,label)}
           <span style="color:var(--ink3);transform:rotate(${open?'180deg':'0'});transition:.15s;display:flex">${ic('chev',16)}</span></div>
-        ${open?`<div style="padding:0 20px 20px;border-top:1px solid var(--b1)"><div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding-top:16px">
+        ${open?`<div style="padding:2px 20px 20px;border-top:1px solid var(--b1)">
+          ${l.topic?`<div class="sub" style="padding-top:14px;margin-bottom:16px">${esc(l.topic)}</div>`:""}
+          <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
           <div><div class="caps" style="margin-bottom:8px">Чему научишься</div>
-            ${(l.outcomes||[]).map(x=>`<div style="display:flex;gap:8px;font-size:13.5px;color:var(--ink2);margin-bottom:6px"><span style="flex-shrink:0;margin-top:3px">${ic('chev'?'':'')}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L19 7"/></svg></span>${esc(x)}</div>`).join("")||'<div class="faint">—</div>'}</div>
-          <div><div class="caps" style="margin-bottom:8px">Навыки</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">${(l.skills||[]).map(sk=>`<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${esc(sk)}</span>`).join("")}</div>
-            ${(l.materials&&l.materials.length)?`<div class="caps" style="margin-bottom:8px">Материалы</div>
-              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">${l.materials.map(m=>`<a href="${esc(m.url)}" target="_blank" style="display:flex;align-items:center;gap:8px;font-size:13px">${ic('lectures',15)}${esc(m.title)}</a>`).join("")}</div>`:`<div class="faint" style="margin-bottom:14px">Материалы появятся ближе к лекции</div>`}
-            <div style="display:flex;gap:8px;flex-wrap:wrap">${asg?`<button class="btn sm" onclick="go('homework')">Открыть в Заданиях</button>`:""}</div></div>
-        </div></div>`:""}
+            ${(l.outcomes||[]).map(x=>`<div style="display:flex;gap:8px;font-size:13.5px;color:var(--ink2);margin-bottom:6px"><span style="flex-shrink:0;margin-top:2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L19 7"/></svg></span>${esc(x)}</div>`).join("")||'<div class="faint">—</div>'}
+            ${(l.materials&&l.materials.length)?`<div class="caps" style="margin:16px 0 8px">Материалы</div>
+              <div style="display:flex;flex-direction:column;gap:6px">${l.materials.map(m=>`<a href="${esc(m.url)}" target="_blank" style="display:flex;align-items:center;gap:8px;font-size:13px">${ic('lectures',15)}${esc(m.title)}</a>`).join("")}</div>`:`<div class="faint" style="margin-top:16px">Материалы появятся ближе к лекции</div>`}
+          </div>
+          <div><div class="caps" style="margin-bottom:10px">Скиллы лекции · что и зачем</div>
+            <div style="display:flex;flex-direction:column;gap:10px">${(l.skills||[]).map(sk=>{const inf=SKILLS[sk];return `<div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="chip mono" style="background:var(--accent-bg);color:var(--accent);font-size:10.5px">${esc(sk)}</span><span style="font-size:12.5px;font-weight:600">${esc(inf?inf[0]:"")}</span></div>
+              ${inf?`<div class="faint" style="margin-top:3px;line-height:1.4">${esc(inf[1])}</div>`:""}</div>`;}).join("")||'<div class="faint">—</div>'}</div>
+          </div></div>
+          ${asg?`<div class="caps" style="margin:20px 0 8px">Домашнее задание</div>
+            <div style="border:1px solid var(--b1);border-radius:10px;padding:14px;background:var(--bg2)">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+                <span style="font-size:14px;font-weight:600">${esc(asg.title)}</span>
+                <span class="faint mono" style="margin-left:auto">${esc(asg.fmt)} · до ${asg.max_score} б.</span></div>
+              <div class="sub" style="font-size:12.5px;margin-bottom:12px">${esc(asg.description)}</div>
+              <button class="btn primary sm" onclick="go('homework')">Открыть и сдать →</button></div>`:""}
+        </div>`:""}
       </div>`;
     });
     blocks+=`</div>`;
