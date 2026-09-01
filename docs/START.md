@@ -13,19 +13,20 @@ CLI курса — **`ape`**. Вход по GitHub, лимит один: 25M т�
 pip install "git+https://github.com/mkhlsokolenko-ai/ai-product-engineer#subdirectory=cli"
 ```
 
-> Если pip ставит в user-каталог и команда `ape` не находится — используй
-> `python -m ape ...` вместо `ape ...`, либо добавь в PATH папку из предупреждения pip.
+**Запускай через `python -m ape`** — так работает всегда, на Windows тоже:
+```bash
+python -m ape --help
+```
+
+> Почему `python -m ape`, а не просто `ape`? На Windows pip кладёт `ape.exe` в папку
+> `Scripts`, которой обычно нет в PATH → `ape` не распознаётся. `python -m ape`
+> обходит это и работает везде. (На macOS/Linux короткая `ape …` тоже сработает.)
+> Если `python` не находится — попробуй `py -m ape` (Windows) или `python3 -m ape`.
 
 **Нет git?** Скачай одним файлом (зависимостей нет):
 ```bash
 curl -O https://s3.engineer-ai.pro/materials/ape.py
-# дальше вместо "ape" пиши "python ape.py"
-python ape.py login
-```
-
-Проверка установки:
-```bash
-ape --help
+python ape.py login          # дальше вместо "ape" пиши "python ape.py"
 ```
 
 ---
@@ -33,7 +34,7 @@ ape --help
 ## Шаг 2. Войди через GitHub
 
 ```bash
-ape login
+python -m ape login
 ```
 
 Откроется браузер → **Continue with GitHub** → подтверди доступ. Вкладка скажет
@@ -41,7 +42,7 @@ ape login
 
 Проверка входа:
 ```bash
-ape whoami
+python -m ape whoami
 ```
 Должно показать твой логин и роль `student`.
 
@@ -50,14 +51,14 @@ ape whoami
 ## Шаг 3. Первый запрос
 
 ```bash
-ape code "напиши на Python функцию для проверки строки на палиндром с тестом pytest"
+python -m ape code "напиши функцию проверки строки на палиндром + тест pytest"
 ```
 
 Пойдёт на self-host **Qwen3.8-27B** — это бесплатно из твоей квоты.
 
 Ресёрч и рассуждения — на **DeepSeek**:
 ```bash
-ape ask "когда RAG лучше дообучения модели? коротко"
+python -m ape ask "когда RAG лучше дообучения модели? коротко"
 ```
 
 ---
@@ -66,29 +67,29 @@ ape ask "когда RAG лучше дообучения модели? корот
 
 | Команда | Что делает |
 |---|---|
-| `ape login` | вход через GitHub (токен сохраняется и обновляется сам) |
-| `ape code "…"` | код → Qwen3.8-27B (быстро, бесплатно из квоты, чистый вывод) |
-| `ape ask "…"` | ресёрч/рассуждения → DeepSeek |
-| `ape rag index ./docs/*.md` | загрузить документы в свою RAG-коллекцию |
-| `ape rag search "…"` | поиск по своей коллекции |
-| `ape usage` | сколько токенов осталось за неделю |
-| `ape whoami` / `ape logout` | кто я / выйти |
+| `python -m ape login` | вход через GitHub (токен сохраняется и обновляется сам) |
+| `python -m ape code "…"` | код → Qwen3.8-27B (быстро, бесплатно из квоты, чистый вывод) |
+| `python -m ape ask "…"` | ресёрч/рассуждения → DeepSeek |
+| `python -m ape rag index ./docs/*.md` | загрузить документы в свою RAG-коллекцию |
+| `python -m ape rag search "…"` | поиск по своей коллекции |
+| `python -m ape usage` | сколько токенов осталось за неделю |
+| `python -m ape whoami` / `... logout` | кто я / выйти |
 
-Приложить файл к запросу: `ape code "добавь обработку ошибок" -f app.py`
-Через pipe: `git diff | ape code "напиши сообщение коммита" --stdin`
+Приложить файл к запросу: `python -m ape code "добавь обработку ошибок" -f app.py`
+Через pipe: `git diff | python -m ape code "напиши сообщение коммита" --stdin`
 
 ---
 
 ## Если что-то не работает
 
-- **`ape: command not found`** — pip поставил в user-каталог. Используй `python -m ape …`
-  или добавь в PATH путь из предупреждения pip (обычно `~/.local/bin`).
-- **`ape login` не открыл браузер** — скопируй ссылку, которую CLI напечатал, и открой вручную.
+- **`ape` не распознаётся / command not found** (частое на Windows) — pip положил `ape.exe`
+  в папку `Scripts` вне PATH. Просто пиши `python -m ape …` (или `py -m ape …`). Это норма.
+- **`python -m ape login` не открыл браузер** — скопируй ссылку, которую CLI напечатал, и открой вручную.
 - **`Сессия истекла` / 401** — просто выполни `ape login` заново.
 - **`quota_exceeded`** — израсходована недельная квота (25M токенов). Сбросится в понедельник;
   `ape usage` покажет остаток.
-- **`pip install engineer-ai-cli` даёт ошибку** — такого пакета нет. Ставь по команде из Шага 1
-  (через `git+https://…`).
+- **`pip install engineer-ai-cli` даёт ошибку** — такого пакета нет на PyPI. Ставь командой из
+  Шага 1 (через `git+https://…`) или качай один файл `ape.py`.
 
 ---
 
