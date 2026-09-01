@@ -21,6 +21,7 @@ import hashlib
 import http.server
 import json
 import os
+import random
 import secrets
 import ssl
 import sys
@@ -295,19 +296,59 @@ def _read_prompt(text: str | None, files: list[str], stdin: bool) -> str:
     return "".join(parts)
 
 
+_PHRASES = [
+    "Размышляю", "Кручу колесо", "Думаю о бесконечно-вечном", "Фрактальное подобие",
+    "Сверяюсь со вселенной", "Разматываю клубок", "Собираю мысли в кучу",
+    "Ловлю дзен", "Считаю на пальцах у робота", "Гоняю электроны", "Плету нейросеть",
+    "Заглядываю за горизонт", "Медитирую над токенами", "Ищу изящное решение",
+]
+_SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _spin_call(tool: str, args: dict):
+    """Вызов MCP с анимацией «думанья»: спиннер, фраза, таймер. Возвращает результат."""
+    if not sys.stdout.isatty():
+        return _mcp_call(tool, args)
+    box = {}
+    def worker():
+        try:
+            box["res"] = _mcp_call(tool, args)
+        except BaseException as e:  # noqa: BLE001 — пробросим в main-поток
+            box["err"] = e
+    th = threading.Thread(target=worker, daemon=True)
+    start = time.time(); th.start()
+    i = 0; phrase = random.choice(_PHRASES); swap = start + 2.5
+    while th.is_alive():
+        now = time.time()
+        if now > swap:
+            phrase = random.choice(_PHRASES); swap = now + 2.5
+        frame = _SPIN[i % len(_SPIN)] if os.environ.get("WT_SESSION") else "|/-\\"[i % 4]
+        sys.stdout.write(col(f"\r  {frame} {phrase}… {now - start:4.1f}s", "blue") + " " * 6)
+        sys.stdout.flush(); i += 1; time.sleep(0.1)
+    th.join()
+    sys.stdout.write("\r" + " " * 60 + "\r"); sys.stdout.flush()
+    if "err" in box:
+        raise box["err"]
+    return box.get("res"), time.time() - start
+
+
 def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> None:
-    label = {"code": "Qwen3.8-27B (self-host)", "research": "DeepSeek", "standard": "каскад"}.get(profile, profile)
-    print(col(f"→ профиль {profile} · {label}", "gray"), file=sys.stderr)
-    res = _mcp_call("chat", {"prompt": prompt, "session_id": _session_id(),
-                             "profile": profile, "system": system, "max_tokens": max_tokens})
+    label = {"code": "Qwen3.8-27B", "research": "DeepSeek", "standard": "каскад"}.get(profile, profile)
+    print(col(f"  → {label}", "gray"), file=sys.stderr)
+    out = _spin_call("chat", {"prompt": prompt, "session_id": _session_id(),
+                              "profile": profile, "system": system, "max_tokens": max_tokens})
+    res, elapsed = out if isinstance(out, tuple) else (out, None)
     if res.get("error"):
-        sys.exit(col(res.get("message", res["error"]), "yellow"))
+        print(col(res.get("message", res["error"]), "yellow")); return
     print(res.get("text", ""))
     q = (res.get("quota") or {}).get("week", {})
-    used, out = res.get("input_tokens", 0), res.get("output_tokens", 0)
-    tail = f"{res.get('model','?')} · {used}+{out} ток · {res.get('cost_rub',0):.3f}₽"
+    used, o = res.get("input_tokens", 0), res.get("output_tokens", 0)
+    tail = f"{res.get('model','?')} · {used}+{o} ток"
+    if elapsed is not None:
+        tail += f" · {elapsed:.1f}s"
+    tail += f" · {res.get('cost_rub',0):.3f}₽"
     if q:
-        tail += f" · осталось за неделю {q.get('remaining',0):,}".replace(",", " ")
+        tail += f" · осталось {q.get('remaining',0):,}".replace(",", " ")
     print(col(tail, "gray"), file=sys.stderr)
 
 
@@ -419,8 +460,122 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+# ─────────────────────── Интерактивный режим (REPL) ───────────────────────
+
+def _banner() -> None:
+    a, o, b, g = C["blue"], C["off"], C["bold"], C["gray"]
+    logo = [
+        "        ▲        ",
+        "       ╱ ╲       ",
+        "      ╱   ╲      ",
+        "     ╱─────╲     ",
+        "    ◦       ◦    ",
+    ]
+    who = _claims().get("preferred_username")
+    right = [
+        f"{b}ape{o}{a} · CLI курса AI Product Engineer",
+        f"{g}engineer-ai.pro{o}",
+        "",
+        f"{g}Пиши запрос и Enter → код на Qwen3.8-27B.{o}",
+        f"{g}/ask <текст> — ресёрч (DeepSeek) · /help · /exit{o}",
+    ]
+    print()
+    for i, l in enumerate(logo):
+        r = right[i] if i < len(right) else ""
+        print(f"  {a}{l}{o}  {r}")
+    if who:
+        print(f"  {g}вошёл как {who}. Команды — через / (напиши /help){o}")
+    else:
+        print(f"  {C['yellow']}не вошёл — набери /login{o}")
+    print()
+
+
+_HELP = """  Команды (через /):
+    /code <текст>    код на Qwen3.8-27B
+    /ask  <текст>    ресёрч/рассуждения на DeepSeek
+    /rag search <q>  поиск по своей RAG-коллекции
+    /rag index <ф.>  проиндексировать файлы
+    /usage           расход и остаток квоты
+    /whoami          кто я
+    /login /logout   вход / выход
+    /clear           очистить экран
+    /help            эта справка
+    /exit  (или Ctrl+C дважды)  выход
+  Без / — запрос уходит на Qwen (код). Пиши прямо в строке."""
+
+
+def _repl() -> None:
+    _banner()
+    while True:
+        try:
+            line = input(col("ape ▸ ", "blue")).strip()
+        except EOFError:
+            print(); break
+        except KeyboardInterrupt:
+            print(col("\n  (Ctrl+C) — для выхода набери /exit", "gray")); continue
+        if not line:
+            continue
+        try:
+            if line.startswith("/"):
+                parts = line[1:].split(maxsplit=1)
+                cmd = (parts[0] or "").lower()
+                rest = parts[1].strip() if len(parts) > 1 else ""
+                if cmd in ("exit", "quit", "q"):
+                    print(col("  Пока!", "gray")); break
+                elif cmd in ("help", "h", "?"):
+                    print(_HELP)
+                elif cmd == "clear":
+                    os.system("cls" if os.name == "nt" else "clear"); _banner()
+                elif cmd == "code":
+                    if rest:
+                        _chat("code", rest, "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+                    else:
+                        print(col("  Пример: /code напиши функцию быстрой сортировки", "gray"))
+                elif cmd == "ask":
+                    if rest:
+                        _chat("research", rest, "", 2048)
+                    else:
+                        print(col("  Пример: /ask когда RAG лучше дообучения?", "gray"))
+                elif cmd == "rag":
+                    sp = rest.split(maxsplit=1)
+                    if sp and sp[0] == "search" and len(sp) > 1:
+                        cmd_rag(type("A", (), {"rag_cmd": "search", "query": sp[1], "top_k": 5}))
+                    elif sp and sp[0] == "index" and len(sp) > 1:
+                        cmd_rag(type("A", (), {"rag_cmd": "index", "files": sp[1].split()}))
+                    else:
+                        print(col("  /rag search <запрос>  или  /rag index <файлы>", "gray"))
+                elif cmd == "usage":
+                    cmd_usage(None)
+                elif cmd == "whoami":
+                    cmd_whoami(None)
+                elif cmd == "login":
+                    login("github")
+                elif cmd == "logout":
+                    cmd_logout(None)
+                else:
+                    print(col(f"  Неизвестная команда /{cmd}. /help — список.", "yellow"))
+            else:
+                _chat("code", line, "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+        except SystemExit as e:
+            msg = e.code if isinstance(e.code, str) else None
+            if msg:
+                print(msg)
+        except KeyboardInterrupt:
+            print(col("\n  прервано", "gray"))
+        except Exception as e:  # noqa: BLE001 — REPL не должен падать целиком
+            print(col(f"  Ошибка: {e}", "yellow"))
+
+
 def main():
-    args = build_parser().parse_args()
+    known = {"login", "code", "ask", "chat", "rag", "usage", "whoami", "logout",
+             "session", "repl", "-h", "--help"}
+    argv = sys.argv[1:]
+    if not argv or argv[0] == "repl":
+        return _repl()
+    if argv[0] not in known:  # `ape "напиши функцию…"` → сразу код на Qwen
+        return _chat("code", " ".join(argv),
+                     "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+    args = build_parser().parse_args(argv)
     args.func(args)
 
 
