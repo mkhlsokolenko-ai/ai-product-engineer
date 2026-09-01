@@ -98,27 +98,18 @@ async def _week_sessions(conn, student_id: str) -> set[str]:
 
 
 async def check_quota(student_id: str, session_id: str) -> None:
-    """Проверяет все три лимита ДО вызова модели. Бросает QuotaExceeded."""
+    """Единственный лимит — недельный потолок токенов на студента. Бросает QuotaExceeded.
+
+    Лимиты «на сессию» и «сессий в неделю» сняты: session_id — это техническая
+    группировка вызовов (переподключения CLI не должны упираться в лимит подключений).
+    Число сессий остаётся в отчёте как справочная метрика, но не ограничивается.
+    """
     async with _conn() as conn:
         week_used = await _week_tokens(conn, student_id)
         if week_used >= settings.weekly_token_limit:
             raise QuotaExceeded(
                 f"Недельный лимит {settings.weekly_token_limit:,} токенов исчерпан "
-                f"(израсходовано {week_used:,})."
-            )
-
-        sess_used = await _session_tokens(conn, session_id)
-        if sess_used >= settings.per_session_token_limit:
-            raise QuotaExceeded(
-                f"Лимит сессии {settings.per_session_token_limit:,} токенов исчерпан "
-                f"(в этой сессии {sess_used:,}). Открой новую сессию."
-            )
-
-        sessions = await _week_sessions(conn, student_id)
-        if session_id not in sessions and len(sessions) >= settings.sessions_per_week:
-            raise QuotaExceeded(
-                f"Лимит {settings.sessions_per_week} сессий на неделю исчерпан. "
-                f"Продолжи в одной из уже открытых сессий или жди следующей недели."
+                f"(израсходовано {week_used:,}). Сброс в понедельник."
             )
 
 

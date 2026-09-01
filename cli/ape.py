@@ -310,7 +310,7 @@ def cmd_usage(a):
     print(f"  токены:  {wk.get('tokens_used',0):,} / {wk.get('limit',0):,}"
           f"  (осталось {wk.get('remaining',0):,})".replace(",", " "))
     print(f"  стоимость: {wk.get('cost_rub',0):.2f} ₽   вызовов: {wk.get('calls',0)}")
-    print(f"  сессий за неделю: {ss.get('opened',0)} / {ss.get('limit',0)}")
+    print(col(f"  сессий открыто: {ss.get('opened',0)} (без лимита — считается только недельный потолок)", "gray"))
 
 
 def cmd_whoami(a):
