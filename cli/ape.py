@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""ape — курсовой CLI «AI Product Engineer».
+
+Единая точка доступа к моделям курса через MCP-шлюз engineer-ai.pro.
+  ape login              — вход через GitHub (браузер), токен сохраняется и авто-обновляется
+  ape code "<задача>"    — генерация/правка кода   -> self-host Qwen3.8-27B
+  ape ask  "<вопрос>"    — ресёрч и рассуждения     -> DeepSeek
+  ape chat "<запрос>"    — общий профиль
+  ape rag index <файлы>  — проиндексировать документы в свою RAG-коллекцию
+  ape rag search "<q>"   — поиск по своей коллекции
+  ape usage              — расход токенов и квота недели
+  ape whoami / ape logout / ape session new
+
+Зависимостей нет — только стандартная библиотека Python 3.9+.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import http.server
+import json
+import os
+import secrets
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+import webbrowser
+
+KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
+MCP = "https://mcp.engineer-ai.pro/mcp"
+PORTAL = "https://engineer-ai.pro"
+CLIENT = "portal"
+CFG_DIR = os.path.join(os.path.expanduser("~"), ".ape")
+CFG = os.path.join(CFG_DIR, "config.json")
+
+C = {"gray": "\033[90m", "blue": "\033[38;5;99m", "green": "\033[32m",
+     "yellow": "\033[33m", "red": "\033[31m", "bold": "\033[1m", "off": "\033[0m"}
+if os.name == "nt" and not os.environ.get("WT_SESSION"):
+    C = {k: "" for k in C}  # старый cmd.exe без ANSI
+
+
+def col(s, c):
+    return f"{C[c]}{s}{C['off']}"
+
+
+# ─────────────────────── конфиг ───────────────────────
+
+def load_cfg() -> dict:
+    try:
+        with open(CFG, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_cfg(cfg: dict) -> None:
+    os.makedirs(CFG_DIR, exist_ok=True)
+    with open(CFG, "w", encoding="utf-8") as f:
+        json.dump(cfg, f)
+    try:
+        os.chmod(CFG, 0o600)
+    except Exception:
+        pass
+
+
+# ─────────────────────── OIDC (loopback PKCE) ───────────────────────
+
+def _b64(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def login(idp: str | None = "github") -> None:
+    verifier = _b64(secrets.token_bytes(48))
+    challenge = _b64(hashlib.sha256(verifier.encode()).digest())
+    state = _b64(secrets.token_bytes(16))
+    holder: dict = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            holder["code"] = (q.get("code") or [None])[0]
+            holder["state"] = (q.get("state") or [None])[0]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(
+                "<html><body style='font-family:sans-serif;text-align:center;padding-top:60px'>"
+                "<h2>ape: вход выполнен ✓</h2><p>Можно вернуться в терминал и закрыть вкладку.</p>"
+                "</body></html>".encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = srv.server_address[1]
+    redirect = f"http://127.0.0.1:{port}/callback"
+    params = {"client_id": CLIENT, "response_type": "code", "scope": "openid",
+              "redirect_uri": redirect, "state": state,
+              "code_challenge": challenge, "code_challenge_method": "S256"}
+    if idp:
+        params["kc_idp_hint"] = idp
+    url = KC + "/auth?" + urllib.parse.urlencode(params)
+
+    print(col("Открываю браузер для входа через GitHub…", "gray"))
+    print(col("Если не открылось — вставь ссылку вручную:", "gray"))
+    print("  " + url)
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+    for _ in range(300):  # ждём редирект до 5 мин
+        if "code" in holder:
+            break
+        time.sleep(1)
+    srv.server_close()
+    if not holder.get("code") or holder.get("state") != state:
+        sys.exit(col("Вход не завершён.", "red"))
+
+    data = urllib.parse.urlencode({
+        "grant_type": "authorization_code", "client_id": CLIENT,
+        "code": holder["code"], "redirect_uri": redirect, "code_verifier": verifier}).encode()
+    tok = _post_form(KC + "/token", data)
+    _store_tokens(tok)
+    who = _claims().get("preferred_username") or "студент"
+    print(col(f"Готово. Вошёл как {who}.", "green"))
+    print(col("Дальше: ape code \"…\"  ·  ape ask \"…\"  ·  ape usage", "gray"))
+
+
+def _post_form(url: str, data: bytes) -> dict:
+    req = urllib.request.Request(url, data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def _store_tokens(tok: dict) -> None:
+    cfg = load_cfg()
+    cfg["access_token"] = tok["access_token"]
+    if tok.get("refresh_token"):
+        cfg["refresh_token"] = tok["refresh_token"]
+    cfg["expires_at"] = time.time() + int(tok.get("expires_in", 300)) - 30
+    save_cfg(cfg)
+
+
+def _refresh() -> bool:
+    cfg = load_cfg()
+    rt = cfg.get("refresh_token")
+    if not rt:
+        return False
+    try:
+        tok = _post_form(KC + "/token", urllib.parse.urlencode({
+            "grant_type": "refresh_token", "client_id": CLIENT, "refresh_token": rt}).encode())
+        _store_tokens(tok)
+        return True
+    except Exception:
+        return False
+
+
+def token() -> str:
+    cfg = load_cfg()
+    if not cfg.get("access_token"):
+        sys.exit(col("Сначала выполни: ape login", "yellow"))
+    if time.time() >= cfg.get("expires_at", 0):
+        if not _refresh():
+            sys.exit(col("Сессия истекла. Выполни: ape login", "yellow"))
+        cfg = load_cfg()
+    return cfg["access_token"]
+
+
+def _claims() -> dict:
+    try:
+        p = load_cfg()["access_token"].split(".")[1]
+        p += "=" * (-len(p) % 4)
+        return json.loads(base64.urlsafe_b64decode(p))
+    except Exception:
+        return {}
+
+
+# ─────────────────────── MCP-клиент (JSON-RPC / streamable-http) ───────────────────────
+
+def _mcp_call(tool: str, args: dict) -> dict:
+    tok = token()
+    sid = {"v": None}
+
+    def rpc(method, params=None, notify=False, retry=True):
+        body = {"jsonrpc": "2.0", "method": method}
+        if not notify:
+            body["id"] = 1
+        if params is not None:
+            body["params"] = params
+        hdr = {"Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream",
+               "Authorization": "Bearer " + tok}
+        if sid["v"]:
+            hdr["mcp-session-id"] = sid["v"]
+        req = urllib.request.Request(MCP, data=json.dumps(body).encode(), headers=hdr)
+        try:
+            r = urllib.request.urlopen(req, timeout=300)
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and retry and _refresh():
+                return rpc(method, params, notify, retry=False)
+            sys.exit(col(f"Шлюз вернул {e.code}. Попробуй ape login заново.", "red"))
+        if not sid["v"] and r.headers.get("mcp-session-id"):
+            sid["v"] = r.headers.get("mcp-session-id")
+        if notify:
+            return None
+        raw = r.read().decode()
+        if "text/event-stream" in (r.headers.get("Content-Type") or ""):
+            raw = "".join(l[5:].strip() for l in raw.splitlines() if l.startswith("data:"))
+        return json.loads(raw)
+
+    rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "ape-cli", "version": "1.0"}})
+    rpc("notifications/initialized", notify=True)
+    res = rpc("tools/call", {"name": tool, "arguments": args})
+    if "error" in res:
+        sys.exit(col("Ошибка шлюза: " + json.dumps(res["error"], ensure_ascii=False), "red"))
+    r = res["result"]
+    if r.get("structuredContent"):
+        return r["structuredContent"]
+    if r.get("content"):
+        try:
+            return json.loads(r["content"][0]["text"])
+        except Exception:
+            return {"text": r["content"][0]["text"]}
+    return {}
+
+
+def _session_id() -> str:
+    cfg = load_cfg()
+    sid = cfg.get("session_id")
+    if not sid:
+        sid = "ape-" + secrets.token_hex(4)
+        cfg["session_id"] = sid
+        save_cfg(cfg)
+    return sid
+
+
+# ─────────────────────── команды ───────────────────────
+
+def _read_prompt(text: str | None, files: list[str], stdin: bool) -> str:
+    parts = []
+    if text:
+        parts.append(text)
+    for fp in files or []:
+        with open(fp, encoding="utf-8") as f:
+            parts.append(f"\n\n=== файл {os.path.basename(fp)} ===\n{f.read()}")
+    if stdin and not sys.stdin.isatty():
+        parts.append("\n\n" + sys.stdin.read())
+    if not parts:
+        sys.exit(col("Пустой запрос. Пример: ape code \"напиши функцию …\"", "yellow"))
+    return "".join(parts)
+
+
+def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> None:
+    label = {"code": "Qwen3.8-27B (self-host)", "research": "DeepSeek", "standard": "каскад"}.get(profile, profile)
+    print(col(f"→ профиль {profile} · {label}", "gray"), file=sys.stderr)
+    res = _mcp_call("chat", {"prompt": prompt, "session_id": _session_id(),
+                             "profile": profile, "system": system, "max_tokens": max_tokens})
+    if res.get("error"):
+        sys.exit(col(res.get("message", res["error"]), "yellow"))
+    print(res.get("text", ""))
+    q = (res.get("quota") or {}).get("week", {})
+    used, out = res.get("input_tokens", 0), res.get("output_tokens", 0)
+    tail = f"{res.get('model','?')} · {used}+{out} ток · {res.get('cost_rub',0):.3f}₽"
+    if q:
+        tail += f" · осталось за неделю {q.get('remaining',0):,}".replace(",", " ")
+    print(col(tail, "gray"), file=sys.stderr)
+
+
+def cmd_code(a):
+    _chat("code", _read_prompt(a.prompt, a.file, a.stdin),
+          a.system or "Ты пишешь чистый production-код. Возвращай только запрошенное.", a.max_tokens)
+
+
+def cmd_ask(a):
+    _chat("research", _read_prompt(a.prompt, a.file, a.stdin), a.system or "", a.max_tokens)
+
+
+def cmd_chat(a):
+    _chat("standard", _read_prompt(a.prompt, a.file, a.stdin), a.system or "", a.max_tokens)
+
+
+def cmd_rag(a):
+    if a.rag_cmd == "index":
+        docs = []
+        for fp in a.files:
+            with open(fp, encoding="utf-8") as f:
+                docs.append(f.read())
+        res = _mcp_call("rag_index", {"documents": docs, "session_id": _session_id()})
+        print(col(f"Проиндексировано документов: {res.get('indexed', len(docs))}", "green"))
+    else:
+        res = _mcp_call("rag_search", {"query": a.query, "session_id": _session_id(),
+                                       "top_k": a.top_k})
+        for i, h in enumerate(res.get("results", res.get("hits", [])), 1):
+            txt = h.get("text") or h.get("document") or json.dumps(h, ensure_ascii=False)
+            print(col(f"[{i}] score={h.get('score','?')}", "blue"))
+            print(txt[:500])
+
+
+def cmd_usage(a):
+    res = _mcp_call("my_usage", {"session_id": _session_id()})
+    wk = res.get("week", {})
+    ss = res.get("sessions_this_week", {})
+    print(col("Расход за неделю", "bold"))
+    print(f"  токены:  {wk.get('tokens_used',0):,} / {wk.get('limit',0):,}"
+          f"  (осталось {wk.get('remaining',0):,})".replace(",", " "))
+    print(f"  стоимость: {wk.get('cost_rub',0):.2f} ₽   вызовов: {wk.get('calls',0)}")
+    print(f"  сессий за неделю: {ss.get('opened',0)} / {ss.get('limit',0)}")
+
+
+def cmd_whoami(a):
+    c = _claims()
+    if not c:
+        sys.exit(col("Не выполнен вход. ape login", "yellow"))
+    roles = (c.get("realm_access") or {}).get("roles", [])
+    role = "admin" if "admin" in roles else "lecturer" if "lecturer" in roles else "student"
+    print(f"{c.get('preferred_username','?')} · {role} · сессия {_session_id()}")
+
+
+def cmd_logout(a):
+    try:
+        os.remove(CFG)
+    except FileNotFoundError:
+        pass
+    print(col("Вышел. Токен удалён.", "green"))
+
+
+def cmd_session(a):
+    if a.session_cmd == "new":
+        cfg = load_cfg()
+        cfg["session_id"] = "ape-" + secrets.token_hex(4)
+        save_cfg(cfg)
+        print(col(f"Новая сессия: {cfg['session_id']}", "green"))
+    else:
+        print(_session_id())
+
+
+def cmd_login(a):
+    login(None if a.no_github else "github")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="ape", description="CLI курса AI Product Engineer")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    lg = sub.add_parser("login", help="вход через GitHub (браузер)")
+    lg.add_argument("--no-github", action="store_true", help="выбрать способ входа в браузере")
+    lg.set_defaults(func=cmd_login)
+
+    for name, fn, hlp in [("code", cmd_code, "код -> Qwen"), ("ask", cmd_ask, "ресёрч -> DeepSeek"),
+                          ("chat", cmd_chat, "общий профиль")]:
+        c = sub.add_parser(name, help=hlp)
+        c.add_argument("prompt", nargs="?", help="текст запроса")
+        c.add_argument("-f", "--file", action="append", help="приложить файл (можно несколько)")
+        c.add_argument("-s", "--system", default="", help="системный промпт")
+        c.add_argument("--stdin", action="store_true", help="дочитать запрос из stdin (pipe)")
+        c.add_argument("--max-tokens", type=int, default=2048, dest="max_tokens")
+        c.set_defaults(func=fn)
+
+    rg = sub.add_parser("rag", help="своя RAG-коллекция")
+    rsub = rg.add_subparsers(dest="rag_cmd", required=True)
+    ri = rsub.add_parser("index", help="проиндексировать файлы")
+    ri.add_argument("files", nargs="+")
+    rs = rsub.add_parser("search", help="поиск по коллекции")
+    rs.add_argument("query")
+    rs.add_argument("--top-k", type=int, default=5, dest="top_k")
+    rg.set_defaults(func=cmd_rag)
+
+    sub.add_parser("usage", help="расход и квота").set_defaults(func=cmd_usage)
+    sub.add_parser("whoami", help="кто я").set_defaults(func=cmd_whoami)
+    sub.add_parser("logout", help="выйти").set_defaults(func=cmd_logout)
+    ss = sub.add_parser("session", help="рабочая сессия (квота 5M ток/сессия)")
+    ss.add_argument("session_cmd", nargs="?", choices=["new", "show"], default="show")
+    ss.set_defaults(func=cmd_session)
+    return p
+
+
+def main():
+    args = build_parser().parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
