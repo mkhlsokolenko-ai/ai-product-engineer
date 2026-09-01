@@ -46,10 +46,32 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-C = {"gray": "\033[90m", "blue": "\033[38;5;99m", "green": "\033[32m",
-     "yellow": "\033[33m", "red": "\033[31m", "bold": "\033[1m", "off": "\033[0m"}
-if os.name == "nt" and not os.environ.get("WT_SESSION"):
-    C = {k: "" for k in C}  # старый cmd.exe без ANSI
+# На Windows включаем ANSI-цвета в самой консоли (conhost/PowerShell) — тогда
+# дизайн работает без Windows Terminal. Если не вышло — гасим цвета.
+_ANSI = True
+if os.name == "nt":
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        k.SetConsoleMode(k.GetStdHandle(-11), 7)  # ENABLE_VIRTUAL_TERMINAL_PROCESSING | ...
+    except Exception:
+        _ANSI = os.environ.get("WT_SESSION") is not None
+
+# Палитра CLI: голубой акцент + серые оттенки.
+C = {
+    "cy": "\033[38;5;81m",    # голубой акцент
+    "cy2": "\033[38;5;39m",   # насыщенный синий
+    "blue": "\033[38;5;75m",  # мягкий сине-голубой
+    "gray": "\033[38;5;245m", # серый
+    "dim": "\033[38;5;240m",  # тёмно-серый
+    "green": "\033[38;5;114m", "yellow": "\033[38;5;179m", "red": "\033[38;5;203m",
+    "bold": "\033[1m", "off": "\033[0m",
+}
+# Вертикальный сине-голубой градиент для лого
+GRAD = ["\033[38;5;24m", "\033[38;5;31m", "\033[38;5;38m", "\033[38;5;45m", "\033[38;5;51m"]
+if not _ANSI:
+    C = {kk: "" for kk in C}
+    GRAD = ["" for _ in GRAD]
 
 
 def col(s, c):
@@ -280,6 +302,64 @@ def _session_id() -> str:
     return sid
 
 
+# ─────────────────────── Память диалога (между сессиями + компрессия) ───────────────────────
+
+def _mem_path() -> str:
+    return os.path.join(CFG_DIR, f"mem-{_session_id()}.json")
+
+
+def mem_load() -> dict:
+    try:
+        with open(_mem_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"summary": "", "turns": []}
+
+
+def mem_save(m: dict) -> None:
+    os.makedirs(CFG_DIR, exist_ok=True)
+    with open(_mem_path(), "w", encoding="utf-8") as f:
+        json.dump(m, f, ensure_ascii=False)
+
+
+def mem_system(base: str, m: dict) -> str:
+    """Собирает system-промпт с памятью: сжатое резюме + последние реплики."""
+    ctx = ""
+    if m.get("summary"):
+        ctx += f"\n\n[Память диалога, сжато]\n{m['summary']}"
+    recent = m.get("turns", [])[-6:]
+    if recent:
+        ctx += "\n\n[Последние реплики]\n" + "\n".join(
+            f"{'Ты' if t['role'] == 'user' else 'Ассистент'}: {t['content'][:600]}" for t in recent)
+    return (base + ctx).strip() if ctx else base
+
+
+def mem_add(m: dict, user: str, assistant: str) -> None:
+    m.setdefault("turns", []).append({"role": "user", "content": user})
+    m["turns"].append({"role": "assistant", "content": assistant})
+    # Компрессия: старые реплики сворачиваем в короткое резюме.
+    over = len(m["turns"]) > 12 or sum(len(t["content"]) for t in m["turns"]) > 5000
+    if over:
+        keep = m["turns"][-6:]
+        old = m["turns"][:-6]
+        transcript = "\n".join(f"{t['role']}: {t['content'][:800]}" for t in old)
+        print(col("  ⟳ сжимаю память диалога…", "dim"), file=sys.stderr)
+        try:
+            r = _mcp_call("chat", {
+                "prompt": "Сожми в 5–8 коротких пунктов ключевые факты, решения и контекст "
+                          "этого диалога, чтобы можно было продолжить работу. Без воды, только суть.\n\n"
+                          f"Текущее резюме:\n{m.get('summary','')}\n\nСтарые реплики:\n{transcript}",
+                "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 400})
+            m["summary"] = (r.get("text") or m.get("summary", "")).strip()
+            m["turns"] = keep
+        except Exception:
+            pass
+    mem_save(m)
+
+
+LAST_REMAIN = None  # остаток недельной квоты (для титульной строки ввода)
+
+
 # ─────────────────────── команды ───────────────────────
 
 def _read_prompt(text: str | None, files: list[str], stdin: bool) -> str:
@@ -322,8 +402,8 @@ def _spin_call(tool: str, args: dict):
         now = time.time()
         if now > swap:
             phrase = random.choice(_PHRASES); swap = now + 2.5
-        frame = _SPIN[i % len(_SPIN)] if os.environ.get("WT_SESSION") else "|/-\\"[i % 4]
-        sys.stdout.write(col(f"\r  {frame} {phrase}… {now - start:4.1f}s", "blue") + " " * 6)
+        frame = _SPIN[i % len(_SPIN)]
+        sys.stdout.write(f"\r  {C['cy']}{frame}{C['off']} {C['gray']}{phrase}… {C['dim']}{now - start:4.1f}s{C['off']}" + " " * 6)
         sys.stdout.flush(); i += 1; time.sleep(0.1)
     th.join()
     sys.stdout.write("\r" + " " * 60 + "\r"); sys.stdout.flush()
@@ -332,24 +412,29 @@ def _spin_call(tool: str, args: dict):
     return box.get("res"), time.time() - start
 
 
-def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> None:
+def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None:
+    global LAST_REMAIN
     label = {"code": "Qwen3.8-27B", "research": "DeepSeek", "standard": "каскад"}.get(profile, profile)
-    print(col(f"  → {label}", "gray"), file=sys.stderr)
+    print(col(f"  → {label}", "dim"), file=sys.stderr)
     out = _spin_call("chat", {"prompt": prompt, "session_id": _session_id(),
                               "profile": profile, "system": system, "max_tokens": max_tokens})
     res, elapsed = out if isinstance(out, tuple) else (out, None)
     if res.get("error"):
-        print(col(res.get("message", res["error"]), "yellow")); return
-    print(res.get("text", ""))
+        print(col(res.get("message", res["error"]), "yellow")); return None
+    text = res.get("text", "")
+    print(text)
     q = (res.get("quota") or {}).get("week", {})
+    if q.get("remaining") is not None:
+        LAST_REMAIN = q["remaining"]
     used, o = res.get("input_tokens", 0), res.get("output_tokens", 0)
-    tail = f"{res.get('model','?')} · {used}+{o} ток"
+    tail = f"  {res.get('model','?')} · {used}+{o} ток"
     if elapsed is not None:
         tail += f" · {elapsed:.1f}s"
     tail += f" · {res.get('cost_rub',0):.3f}₽"
     if q:
         tail += f" · осталось {q.get('remaining',0):,}".replace(",", " ")
-    print(col(tail, "gray"), file=sys.stderr)
+    print(col(tail, "dim"), file=sys.stderr)
+    return text
 
 
 def cmd_code(a):
@@ -462,57 +547,89 @@ def build_parser() -> argparse.ArgumentParser:
 
 # ─────────────────────── Интерактивный режим (REPL) ───────────────────────
 
+_CODE_SYS = "Ты пишешь чистый production-код. Возвращай только запрошенное."
+
+
+def _fmt_rem(n) -> str:
+    if n is None:
+        return "—"
+    return (f"{n/1e6:.1f}M" if n >= 1e6 else f"{n/1e3:.0f}k" if n >= 1e3 else str(n))
+
+
 def _banner() -> None:
-    a, o, b, g = C["blue"], C["off"], C["bold"], C["gray"]
+    o, b = C["off"], C["bold"]
+    cy, cy2, g, dim = C["cy"], C["cy2"], C["gray"], C["dim"]
+    # объёмное лого: треугольник-гора с узлами, сине-голубой градиент по строкам
     logo = [
-        "        ▲        ",
-        "       ╱ ╲       ",
-        "      ╱   ╲      ",
-        "     ╱─────╲     ",
-        "    ◦       ◦    ",
+        "    ▁▁▁    ",
+        "   ▟███▙   ",
+        "  ▟█████▙  ",
+        " ▟███████▙ ",
+        "▟█████████▙",
+        "◥▔▔▔●▔▔▔●▔◤",
     ]
-    who = _claims().get("preferred_username")
     right = [
-        f"{b}ape{o}{a} · CLI курса AI Product Engineer",
-        f"{g}engineer-ai.pro{o}",
         "",
-        f"{g}Пиши запрос и Enter → код на Qwen3.8-27B.{o}",
-        f"{g}/ask <текст> — ресёрч (DeepSeek) · /help · /exit{o}",
+        f"{b}{cy}a p e{o}",
+        f"{g}CLI курса AI Product Engineer{o}",
+        f"{dim}engineer-ai.pro · Qwen3.8-27B / DeepSeek{o}",
+        "",
+        "",
     ]
     print()
     for i, l in enumerate(logo):
+        gc = GRAD[min(i, len(GRAD) - 1)]
         r = right[i] if i < len(right) else ""
-        print(f"  {a}{l}{o}  {r}")
+        print(f"  {gc}{l}{o}   {r}")
+    who = _claims().get("preferred_username")
     if who:
-        print(f"  {g}вошёл как {who}. Команды — через / (напиши /help){o}")
+        print(f"  {dim}вошёл как {cy2}{who}{dim} · память диалога включена · /help — команды{o}\n")
     else:
-        print(f"  {C['yellow']}не вошёл — набери /login{o}")
-    print()
+        print(f"  {C['yellow']}не вошёл — набери /login{o}\n")
 
 
-_HELP = """  Команды (через /):
-    /code <текст>    код на Qwen3.8-27B
-    /ask  <текст>    ресёрч/рассуждения на DeepSeek
-    /rag search <q>  поиск по своей RAG-коллекции
-    /rag index <ф.>  проиндексировать файлы
-    /usage           расход и остаток квоты
-    /whoami          кто я
-    /login /logout   вход / выход
-    /clear           очистить экран
-    /help            эта справка
-    /exit  (или Ctrl+C дважды)  выход
-  Без / — запрос уходит на Qwen (код). Пиши прямо в строке."""
+_HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['off']}
+    {C['cy']}/code{C['off']} <текст>    код на Qwen3.8-27B
+    {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
+    {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
+    {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
+    {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
+    {C['cy']}/memory{C['off']}          показать, что агент помнит
+    {C['cy']}/forget{C['off']}          очистить память этой сессии
+    {C['cy']}/usage{C['off']}           расход и остаток квоты
+    {C['cy']}/whoami{C['off']} {C['dim']}·{C['off']} {C['cy']}/login{C['off']} {C['dim']}·{C['off']} {C['cy']}/logout{C['off']} {C['dim']}·{C['off']} {C['cy']}/clear{C['off']} {C['dim']}·{C['off']} {C['cy']}/exit{C['off']}
+  {C['dim']}Без / — запрос уходит в текущем режиме. Память копится и сжимается сама.{C['off']}"""
+
+
+def _input_box(mode: str) -> str:
+    """Титульная рамка ввода: режим + остаток квоты; возвращает строку-приглашение."""
+    o, cy, dim = C["off"], C["cy"], C["dim"]
+    W = 54
+    title = f" {mode} "
+    rem = f" осталось {_fmt_rem(LAST_REMAIN)} "
+    fill = W - len(title) - len(rem)
+    top = f"  {dim}╭─{cy}{title}{dim}{'─' * max(1, fill)}{rem}╮{o}"
+    print(top)
+    return f"  {dim}│{o} {cy}›{o} "
 
 
 def _repl() -> None:
+    global LAST_REMAIN
+    os.system("")  # активирует VT на некоторых Windows-консолях
     _banner()
+    try:
+        u = _mcp_call("my_usage", {"session_id": _session_id()})
+        LAST_REMAIN = (u.get("week") or {}).get("remaining")
+    except Exception:
+        pass
+    mode = "code"
     while True:
         try:
-            line = input(col("ape ▸ ", "blue")).strip()
+            line = input(_input_box(mode)).strip()
         except EOFError:
             print(); break
         except KeyboardInterrupt:
-            print(col("\n  (Ctrl+C) — для выхода набери /exit", "gray")); continue
+            print(col("\n  (Ctrl+C) — для выхода набери /exit", "dim")); continue
         if not line:
             continue
         try:
@@ -521,21 +638,22 @@ def _repl() -> None:
                 cmd = (parts[0] or "").lower()
                 rest = parts[1].strip() if len(parts) > 1 else ""
                 if cmd in ("exit", "quit", "q"):
-                    print(col("  Пока!", "gray")); break
+                    print(col("  До связи!", "cy")); break
                 elif cmd in ("help", "h", "?"):
                     print(_HELP)
                 elif cmd == "clear":
                     os.system("cls" if os.name == "nt" else "clear"); _banner()
-                elif cmd == "code":
-                    if rest:
-                        _chat("code", rest, "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+                elif cmd == "mode":
+                    if rest in ("code", "ask"):
+                        mode = rest; print(col(f"  режим по умолчанию: {mode}", "dim"))
                     else:
-                        print(col("  Пример: /code напиши функцию быстрой сортировки", "gray"))
-                elif cmd == "ask":
+                        print(col("  /mode code  или  /mode ask", "gray"))
+                elif cmd in ("code", "ask"):
+                    prof = "code" if cmd == "code" else "research"
                     if rest:
-                        _chat("research", rest, "", 2048)
+                        _mem_turn(prof, rest)
                     else:
-                        print(col("  Пример: /ask когда RAG лучше дообучения?", "gray"))
+                        mode = cmd; print(col(f"  режим по умолчанию: {mode}", "dim"))
                 elif cmd == "rag":
                     sp = rest.split(maxsplit=1)
                     if sp and sp[0] == "search" and len(sp) > 1:
@@ -544,6 +662,17 @@ def _repl() -> None:
                         cmd_rag(type("A", (), {"rag_cmd": "index", "files": sp[1].split()}))
                     else:
                         print(col("  /rag search <запрос>  или  /rag index <файлы>", "gray"))
+                elif cmd == "memory":
+                    m = mem_load()
+                    if m.get("summary"):
+                        print(col("  Сжато:", "dim")); print("  " + m["summary"].replace("\n", "\n  "))
+                    print(col(f"  реплик в памяти: {len(m.get('turns', []))}", "dim"))
+                elif cmd == "forget":
+                    try:
+                        os.remove(_mem_path())
+                    except FileNotFoundError:
+                        pass
+                    print(col("  Память этой сессии очищена.", "cy"))
                 elif cmd == "usage":
                     cmd_usage(None)
                 elif cmd == "whoami":
@@ -555,15 +684,23 @@ def _repl() -> None:
                 else:
                     print(col(f"  Неизвестная команда /{cmd}. /help — список.", "yellow"))
             else:
-                _chat("code", line, "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+                _mem_turn("code" if mode == "code" else "research", line)
         except SystemExit as e:
-            msg = e.code if isinstance(e.code, str) else None
-            if msg:
-                print(msg)
+            if isinstance(e.code, str):
+                print(e.code)
         except KeyboardInterrupt:
-            print(col("\n  прервано", "gray"))
+            print(col("\n  прервано", "dim"))
         except Exception as e:  # noqa: BLE001 — REPL не должен падать целиком
             print(col(f"  Ошибка: {e}", "yellow"))
+
+
+def _mem_turn(profile: str, prompt: str) -> None:
+    """Один ход диалога с памятью: подмешиваем контекст, сохраняем ответ."""
+    m = mem_load()
+    base = _CODE_SYS if profile == "code" else ""
+    text = _chat(profile, prompt, mem_system(base, m), 2048)
+    if text:
+        mem_add(m, prompt, text)
 
 
 def main():
