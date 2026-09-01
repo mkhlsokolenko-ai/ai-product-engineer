@@ -15,7 +15,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from jwt import PyJWKClient
 from minio import Minio
 from pydantic import BaseModel
@@ -215,6 +215,29 @@ async def upload_url(filename: str, size: int = 0, claims: dict = Depends(verify
     obj = f"{sub}/{safe}"
     url = _mc(True).presigned_put_object(settings.minio_bucket, obj, expires=timedelta(hours=1))
     return {"url": url, "object": obj, "method": "PUT", "expires_sec": 3600}
+
+
+@app.post("/api/storage/upload")
+async def upload_direct(file: UploadFile = File(...), claims: dict = Depends(verify)) -> dict:
+    """Загрузка файла ЧЕРЕЗ portal-api (тот же origin → внутренняя сеть до MinIO).
+    Надёжнее presigned: без CORS, без кросс-origin и hairpin к публичному s3."""
+    sub = claims["sub"]
+    mc = _mc(False)
+    if not mc.bucket_exists(settings.minio_bucket):
+        mc.make_bucket(settings.minio_bucket)
+    f = file.file
+    f.seek(0, 2); size = f.tell(); f.seek(0)  # размер без чтения в память (spooled temp)
+    used = sum(
+        (o.size or 0) for o in mc.list_objects(settings.minio_bucket, prefix=f"{sub}/", recursive=True)
+    )
+    if used + size > settings.storage_limit_bytes:
+        raise HTTPException(status_code=413,
+                            detail=f"Лимит {settings.storage_limit_bytes // (1024 * 1024)} МБ исчерпан")
+    safe = (file.filename or "file").replace("/", "_").replace("\\", "_").replace("..", "_").strip() or "file"
+    obj = f"{sub}/{safe}"
+    mc.put_object(settings.minio_bucket, obj, f, length=size, part_size=10 * 1024 * 1024,
+                  content_type=file.content_type or "application/octet-stream")
+    return {"ok": True, "object": obj, "size": size}
 
 
 def _safe_name(filename: str) -> str:
@@ -671,6 +694,18 @@ async def material_upload_url(filename: str, claims: dict = Depends(require_staf
     _ensure_materials()
     url = _mc(True).presigned_put_object("materials", filename, expires=timedelta(hours=1))
     return {"url": url, "public_url": f"https://{settings.minio_public}/materials/{filename}"}
+
+
+@app.post("/api/admin/material-upload")
+async def material_upload_direct(file: UploadFile = File(...), claims: dict = Depends(require_staff)) -> dict:
+    """Загрузка материала через portal-api (без presigned/CORS)."""
+    _ensure_materials()
+    safe = (file.filename or "file").replace("/", "_").replace("\\", "_").replace("..", "_").strip() or "file"
+    f = file.file
+    f.seek(0, 2); size = f.tell(); f.seek(0)
+    _mc(False).put_object("materials", safe, f, length=size, part_size=10 * 1024 * 1024,
+                          content_type=file.content_type or "application/octet-stream")
+    return {"ok": True, "name": safe, "public_url": f"https://{settings.minio_public}/materials/{safe}"}
 
 
 @app.delete("/api/admin/material")
