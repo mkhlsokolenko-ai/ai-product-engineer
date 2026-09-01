@@ -37,6 +37,14 @@ CLIENT = "portal"
 CFG_DIR = os.path.join(os.path.expanduser("~"), ".ape")
 CFG = os.path.join(CFG_DIR, "config.json")
 
+# Windows-консоль по умолчанию cp1251/cp866 и падает на '₽', '→', '✓' и кириллице
+# (UnicodeEncodeError). Переводим вывод в UTF-8 с безопасной заменой — не крашится нигде.
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 C = {"gray": "\033[90m", "blue": "\033[38;5;99m", "green": "\033[32m",
      "yellow": "\033[33m", "red": "\033[31m", "bold": "\033[1m", "off": "\033[0m"}
 if os.name == "nt" and not os.environ.get("WT_SESSION"):
