@@ -1,6 +1,9 @@
 {
   "realm": "ai-product-engineer",
   "enabled": true,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 86400,
   "displayName": "AI Product Engineer",
   "displayNameHtml": "<b>AI Product Engineer</b>",
   "loginWithEmailAllowed": true,

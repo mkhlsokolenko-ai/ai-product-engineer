@@ -6,17 +6,15 @@
 
 ## Установка
 
-**Вариант A — pip (рекомендуется):**
+**Вариант A — pip из репозитория (рекомендуется, нужен git):**
 ```bash
-pip install engineer-ai-cli
-# или прямо из репозитория курса:
 pip install "git+https://github.com/mkhlsokolenko-ai/ai-product-engineer#subdirectory=cli"
 ```
 
-**Вариант B — один файл, без установки:**
+**Вариант B — один файл, без git и без установки:**
 ```bash
-curl -O https://raw.githubusercontent.com/mkhlsokolenko-ai/ai-product-engineer/main/cli/ape.py
-python ape.py login
+curl -O https://s3.engineer-ai.pro/materials/ape.py
+python ape.py login      # дальше вместо "ape" пиши "python ape.py"
 ```
 
 ## Быстрый старт (2 команды)
