@@ -463,8 +463,8 @@ async function vProject(){
 }
 async function saveProject(){await api("/api/my/project",{method:"POST",body:JSON.stringify({repo_url:$("prRepo").value,description:$("prDesc").value,status:$("prStatus").value})});toast("Проект сохранён");}
 async function pjUpload(files){const msg=$("pjMsg");for(const f of files){if(f.size>600*1048576){msg.textContent=f.name+" > 600 МБ — пропущен";continue;}msg.textContent="Загрузка "+f.name+"…";
-  try{const r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size);const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error(put.status);}
-  catch(e){msg.textContent="Ошибка: лимит хранилища или сеть";return;}}toast("Файл загружен");vProject();}
+  try{const r=await api("/api/storage/upload-url?filename="+encodeURIComponent(f.name)+"&size="+f.size,{method:"POST"});const put=await fetch(r.url,{method:"PUT",body:f});if(!put.ok)throw new Error("S3 "+put.status);}
+  catch(e){msg.textContent=String(e).includes("413")?"Лимит хранилища исчерпан":"Ошибка загрузки: "+e;return;}}toast("Файл загружен");vProject();}
 async function dlFile(n){const r=await api("/api/storage/download-url?filename="+encodeURIComponent(n));window.open(r.url,"_blank");}
 async function delFile(n){if(!confirm("Удалить "+n+"?"))return;await api("/api/storage/file?filename="+encodeURIComponent(n),{method:"DELETE"});toast("Файл удалён");vProject();}
 
