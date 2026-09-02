@@ -23,6 +23,7 @@ import json
 import os
 import random
 import secrets
+import shutil
 import ssl
 import sys
 import threading
@@ -69,9 +70,13 @@ C = {
 }
 # Вертикальный сине-голубой градиент для лого
 GRAD = ["\033[38;5;24m", "\033[38;5;31m", "\033[38;5;38m", "\033[38;5;45m", "\033[38;5;51m"]
+# Градиент «думанья»: от бледно-голубого к насыщенному фиолетовому (256-цвета)
+SPIN_RAMP = [159, 153, 111, 75, 69, 63, 99, 105, 135, 141, 177]
+SPIN_RAMP = [f"\033[38;5;{n}m" for n in SPIN_RAMP]
 if not _ANSI:
     C = {kk: "" for kk in C}
     GRAD = ["" for _ in GRAD]
+    SPIN_RAMP = [""]
 
 
 def col(s, c):
@@ -403,7 +408,8 @@ def _spin_call(tool: str, args: dict):
         if now > swap:
             phrase = random.choice(_PHRASES); swap = now + 2.5
         frame = _SPIN[i % len(_SPIN)]
-        sys.stdout.write(f"\r  {C['cy']}{frame}{C['off']} {C['gray']}{phrase}… {C['dim']}{now - start:4.1f}s{C['off']}" + " " * 6)
+        grad = SPIN_RAMP[i % len(SPIN_RAMP)]  # плавный перелив бледно-синий → фиолетовый
+        sys.stdout.write(f"\r  {grad}{frame} {phrase}…{C['off']} {C['dim']}{now - start:4.1f}s{C['off']}" + " " * 6)
         sys.stdout.flush(); i += 1; time.sleep(0.1)
     th.join()
     sys.stdout.write("\r" + " " * 60 + "\r"); sys.stdout.flush()
@@ -612,16 +618,142 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
   {C['dim']}Без / — запрос уходит в текущем режиме. Память копится и сжимается сама.{C['off']}"""
 
 
-def _input_box(mode: str) -> str:
-    """Титульная рамка ввода: режим + остаток квоты; возвращает строку-приглашение."""
+def _mk_getch():
+    """Возвращает функцию чтения одной клавиши (спец. → 'UP'/'DOWN'), или None."""
+    if os.name == "nt":
+        try:
+            import msvcrt
+        except Exception:
+            return None
+
+        def getch():
+            c = msvcrt.getwch()
+            if c in ("\x00", "\xe0"):  # спец-клавиша: код во втором символе
+                c2 = msvcrt.getwch()
+                return {"H": "UP", "P": "DOWN", "K": "LEFT", "M": "RIGHT"}.get(c2, "")
+            return c
+        return getch
+    # POSIX
+    try:
+        import termios, tty  # noqa: F401
+    except Exception:
+        return None
+
+    def getch():
+        import termios as _t, tty as _tty
+        fd = sys.stdin.fileno()
+        old = _t.tcgetattr(fd)
+        try:
+            _tty.setcbreak(fd)
+            c = sys.stdin.read(1)
+            if c == "\x1b":  # ESC-последовательность (стрелки)
+                seq = sys.stdin.read(2)
+                return {"[A": "UP", "[B": "DOWN", "[C": "RIGHT", "[D": "LEFT"}.get(seq, "")
+            return c
+        finally:
+            _t.tcsetattr(fd, _t.TCSADRAIN, old)
+    return getch
+
+
+# Команды для выпадающего списка (после ввода "/")
+_CMDS = [
+    ("/code", "код на Qwen3.8-27B"),
+    ("/ask", "ресёрч / рассуждения на DeepSeek"),
+    ("/mode", "режим по умолчанию (code|ask)"),
+    ("/rag", "своя RAG-коллекция (search|index)"),
+    ("/memory", "что агент помнит"),
+    ("/forget", "очистить память сессии"),
+    ("/usage", "расход и остаток квоты"),
+    ("/whoami", "кто я"),
+    ("/login", "вход через GitHub"),
+    ("/logout", "выйти из аккаунта"),
+    ("/clear", "очистить экран"),
+    ("/help", "справка"),
+    ("/exit", "выход"),
+]
+
+
+def _term_w() -> int:
+    return max(40, shutil.get_terminal_size(fallback=(90, 24)).columns)
+
+
+def _topbar(mode: str) -> str:
     o, cy, dim = C["off"], C["cy"], C["dim"]
-    W = 54
+    W = _term_w()
     title = f" {mode} "
     rem = f" осталось {_fmt_rem(LAST_REMAIN)} "
-    fill = W - len(title) - len(rem)
-    top = f"  {dim}╭─{cy}{title}{dim}{'─' * max(1, fill)}{rem}╮{o}"
-    print(top)
-    return f"  {dim}│{o} {cy}›{o} "
+    fill = max(1, W - 4 - len(title) - len(rem))
+    return f"{dim}╭─{cy}{title}{dim}{'─' * fill}{rem}─╮{o}"
+
+
+def _matches(buf: str):
+    if not buf.startswith("/"):
+        return []
+    return [c for c in _CMDS if c[0].startswith(buf.lower())] or []
+
+
+def _read_input(mode: str) -> str:
+    """Полноширинная строка ввода с выпадающим списком команд после '/'.
+    Fallback на обычный input(), если raw-режим недоступен (пайп/неподдерж.)."""
+    print(_topbar(mode))
+    prompt = f"  {C['cy']}›{C['off']} "
+    pvis = 4  # видимая длина "  › "
+    getch = _mk_getch()
+    if getch is None or not sys.stdin.isatty():
+        try:
+            return input(prompt)
+        except EOFError:
+            raise
+    sys.stdout.write(prompt); sys.stdout.flush()
+    buf = ""; sel = 0; drawn = 0
+
+    def redraw():
+        nonlocal drawn
+        ms = _matches(buf)
+        sys.stdout.write("\r\033[J")  # в начало строки + очистить всё ниже
+        sys.stdout.write(prompt + buf)
+        if ms:
+            sys.stdout.write("\n")
+            for i, (name, desc) in enumerate(ms[:8]):
+                mark = "▸" if i == sel else " "
+                if i == sel:
+                    sys.stdout.write(f"  {C['cy']}{mark} {name:<9}{C['off']} {C['gray']}{desc}{C['off']}\n")
+                else:
+                    sys.stdout.write(f"  {C['dim']}{mark} {name:<9} {desc}{C['off']}\n")
+            drawn = min(len(ms), 8)
+            sys.stdout.write(f"\033[{drawn + 1}A")  # вернуть курсор на строку ввода
+        else:
+            drawn = 0
+        sys.stdout.write(f"\r\033[{pvis + len(buf)}C")  # к концу набранного
+        sys.stdout.flush()
+
+    redraw()
+    while True:
+        ch = getch()
+        if ch in ("\r", "\n"):
+            ms = _matches(buf)
+            # если это чистый префикс команды и есть выбор — можно докомплитить Enter'ом,
+            # но по умолчанию Enter отправляет как есть
+            sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
+            return buf
+        if ch == "\x03":  # Ctrl+C
+            sys.stdout.write("\r\033[J"); sys.stdout.flush()
+            raise KeyboardInterrupt
+        if ch in ("\x08", "\x7f"):  # Backspace
+            buf = buf[:-1]; sel = 0; redraw(); continue
+        if ch == "\t":  # Tab — докомплитить выбранную команду
+            ms = _matches(buf)
+            if ms:
+                buf = ms[sel][0] + " "; sel = 0; redraw()
+            continue
+        if ch in ("UP", "DOWN"):
+            ms = _matches(buf)
+            if ms:
+                sel = (sel + (1 if ch == "DOWN" else -1)) % min(len(ms), 8)
+                redraw()
+            continue
+        if ch and ch >= " ":  # печатный символ
+            buf += ch; sel = 0; redraw()
 
 
 def _repl() -> None:
@@ -636,7 +768,7 @@ def _repl() -> None:
     mode = "code"
     while True:
         try:
-            line = input(_input_box(mode)).strip()
+            line = _read_input(mode).strip()
         except EOFError:
             print(); break
         except KeyboardInterrupt:
