@@ -713,13 +713,35 @@ def do_save(rest: str) -> None:
 MAX_FILE = 200_000  # максимум символов на файл (чтобы не раздуть контекст)
 
 
+def _greedy_file(s: str):
+    """Ищет самый ДЛИННЫЙ префикс строки, который является существующим файлом
+    (чтобы ловить пути с пробелами, напр. C:\\Users\\Михаил Соколенко\\...).
+    Возвращает (реальный_путь, остаток_строки) или None."""
+    s = s.strip()
+    if not s:
+        return None
+    # снять обрамляющие кавычки, если это "путь"
+    if s.startswith('"') and '"' in s[1:]:
+        j = s.index('"', 1)
+        cand = s[1:j]
+        if os.path.isfile(os.path.expanduser(cand)):
+            return os.path.expanduser(cand), s[j + 1:].strip()
+    toks = s.split(" ")
+    for k in range(len(toks), 0, -1):
+        cand = " ".join(toks[:k])
+        p = os.path.expanduser(cand)
+        if os.path.isfile(p):
+            return p, " ".join(toks[k:]).strip()
+    return None
+
+
 def _expand_files(text: str):
-    """Подхватывает файлы, указанные ЯВНО: @путь, @"путь с пробелами" или вся строка = путь.
-    Папки не сканирует. Возвращает (чистый_текст_без_упоминаний, [(имя, содержимое, пометка)])."""
+    """Подхватывает файлы по ПРЯМОМУ пути: @путь (в т.ч. с пробелами), @"путь", или вся
+    строка = путь. Папки не сканирует. Возвращает (чистый_текст, [(имя, содержимое, пометка)])."""
     atts = []; seen = set()
 
-    def add(path: str) -> bool:
-        p = os.path.expanduser(path.strip().strip('"'))
+    def add(p: str) -> bool:
+        p = os.path.expanduser(p)
         if not p or p in seen:
             return p in seen
         if os.path.isdir(p):
@@ -738,26 +760,36 @@ def _expand_files(text: str):
         atts.append((os.path.basename(p), data, note)); seen.add(p)
         return True
 
-    t = re.sub(r'@"([^"]+)"', lambda m: "" if add(m.group(1)) else m.group(0), text)
-    t = re.sub(r'@(\S+)', lambda m: "" if add(m.group(1)) else m.group(0), t)
-    clean = t.strip()
-    if not atts:  # вся строка целиком — путь к файлу?
-        whole = text.strip().strip('"')
-        if os.path.isfile(os.path.expanduser(whole)):
-            add(whole); clean = ""
+    # @-упоминания: от каждого @ жадно берём самый длинный существующий путь (с пробелами)
+    at = text.find("@")
+    while at != -1:
+        g = _greedy_file(text[at + 1:])
+        if g and add(g[0]):
+            text = (text[:at] + g[1]).strip()
+            at = text.find("@")
+        else:
+            at = text.find("@", at + 1)
+    clean = text.strip()
+    if not atts:  # без @ — вдруг вся строка (или её начало) это путь к файлу
+        g = _greedy_file(clean)
+        if g and add(g[0]):
+            clean = g[1].strip()
     return clean, atts
 
 
 def _build_prompt(raw: str):
-    """(итоговый промпт с приложенными файлами, что записать в память)."""
+    """(итоговый промпт с приложенными файлами инлайн, что записать в память)."""
     clean, atts = _expand_files(raw)
     if not atts:
         return raw, raw
     print(col("  📎 приложены: " + ", ".join(n + note for n, _, note in atts), "dim"), file=sys.stderr)
-    blocks = "".join(f"\n\n=== файл {n} ===\n{c}" for n, c, _ in atts)
+    blocks = "".join(f"\n\n=== СОДЕРЖИМОЕ ФАЙЛА {n} ===\n{c}\n=== КОНЕЦ ФАЙЛА {n} ==="
+                     for n, c, _ in atts)
     instr = clean or "Изучи приложенный файл и кратко объясни, что он делает; жди указаний."
+    header = ("Ниже дано СОДЕРЖИМОЕ файлов инлайн — работай прямо с ним, "
+              "НЕ говори что нет доступа к файлам и НЕ проси прислать текст.\n\n")
     mem_note = clean or ("[приложены файлы: " + ", ".join(n for n, _, _ in atts) + "]")
-    return instr + blocks, mem_note
+    return header + instr + blocks, mem_note
 
 
 def cmd_code(a):
