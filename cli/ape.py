@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.11.0"
+APE_VERSION = "1.12.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -967,6 +967,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
     {C['cy']}/agents{C['off']} <цель>   несколько агентов ПАРАЛЛЕЛЬНО с tool-calling (Esc — стоп)
+    {C['cy']}/board{C['off']}           общая доска агентов · {C['cy']}/board post <текст>{C['off']} · {C['cy']}/board clear{C['off']}
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
@@ -1024,6 +1025,7 @@ _CMDS = [
     ("/ask", "ресёрч / рассуждения на DeepSeek"),
     ("/mode", "режим по умолчанию (code|ask)"),
     ("/agents", "мульти-агенты параллельно с tool-calling"),
+    ("/board", "общая доска агентов (Blackboard)"),
     ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
@@ -1292,6 +1294,20 @@ def _repl() -> None:
                         mode = cmd; print(col(f"  режим по умолчанию: {mode}", "dim"))
                 elif cmd in ("agents", "team"):
                     cmd_agents(rest)
+                elif cmd in ("board", "bb"):
+                    sp = rest.split(maxsplit=1)
+                    if sp and sp[0] == "clear":
+                        try:
+                            os.remove(_bb_path())
+                        except FileNotFoundError:
+                            pass
+                        print(col("  Доска очищена (лог событий удалён).", "cy"))
+                    elif sp and sp[0] == "post" and len(sp) > 1:
+                        bb_append({"type": "note", "text": sp[1], "agent": "ты"})
+                        print(col("  Крошка добавлена на доску.", "cy"))
+                    else:
+                        board = bb_context()
+                        print(board or col("  Доска пуста. Появится при /agents или /board post <заметка>.", "gray"))
                 elif cmd == "rag":
                     sp = rest.split(maxsplit=1)
                     if sp and sp[0] == "search" and len(sp) > 1:
@@ -1374,6 +1390,57 @@ AGENT_MAX = 4      # сколько агентов максимум паралл
 STEP_MAX = 5       # шагов ReAct на агента
 _STOP = threading.Event()
 
+# ── Blackboard: append-only лог событий; состояние = свёртка. Общая доска агентов. ──
+_BB_LOCK = threading.Lock()
+
+
+def _bb_path() -> str:
+    return os.path.join(CFG_DIR, f"blackboard-{_session_id()}.jsonl")
+
+
+def bb_append(event: dict) -> None:
+    """Только ДОБАВЛЕНИЕ события (никаких перезаписей → нет конфликтов и потерь)."""
+    event = {"ts": time.time(), **event}
+    os.makedirs(CFG_DIR, exist_ok=True)
+    with _BB_LOCK:
+        with open(_bb_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+def bb_events() -> list:
+    try:
+        with open(_bb_path(), encoding="utf-8") as f:
+            return [json.loads(x) for x in f if x.strip()]
+    except Exception:
+        return []
+
+
+def bb_state():
+    """Свёртка событий → (facts: key→{value,by}, notes: [крошки]). Чистка не нужна — это лог."""
+    facts = {}; notes = []
+    for e in bb_events():
+        t = e.get("type")
+        if t == "set" and e.get("key"):
+            facts[e["key"]] = {"value": e.get("value", ""), "by": e.get("agent", "?")}
+        elif t == "note":
+            notes.append(e)
+    return facts, notes
+
+
+def bb_context(limit_notes: int = 12) -> str:
+    """Компактный снимок доски для инъекции в агента."""
+    facts, notes = bb_state()
+    if not facts and not notes:
+        return ""
+    out = []
+    if facts:
+        out.append("Факты на доске:")
+        out += [f"  {k} = {v['value']}  (от {v['by']})" for k, v in facts.items()]
+    if notes:
+        out.append("Крошки (заметки агентов):")
+        out += [f"  [{n.get('agent','?')}] {n.get('text','')[:200]}" for n in notes[-limit_notes:]]
+    return "\n".join(out)
+
 
 def _t_rag(a):
     r = _mcp_call("rag_search", {"query": a.get("query", ""), "session_id": _session_id(), "top_k": 5})
@@ -1404,11 +1471,30 @@ def _t_ask(a):
     return (r.get("text") or "")[:1500]
 
 
+def _t_bb_post(a):
+    who = a.get("_agent", "агент")
+    if a.get("key"):                                   # факт key=value (для координации)
+        bb_append({"type": "set", "key": str(a["key"]), "value": str(a.get("value", "")), "agent": who})
+        return f"на доску: {a['key']} = {a.get('value','')}"
+    text = str(a.get("note") or a.get("value") or "").strip()
+    if not text:
+        return "пусто — нечего писать"
+    bb_append({"type": "note", "text": text, "agent": who})   # хлебная крошка
+    return "крошка оставлена на доске"
+
+
+def _t_bb_read(a):
+    return bb_context() or "доска пуста"
+
+
 AGENT_TOOLS = {
     "rag_search": (_t_rag, 'поиск по своей RAG-коллекции — args: {"query": "..."}'),
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
     "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
     "ask": (_t_ask, 'спросить исследовательскую модель — args: {"query": "..."}'),
+    "bb_post": (_t_bb_post, 'оставить на доске факт или заметку для других агентов — '
+                            'args: {"key":"...","value":"..."} или {"note":"..."}'),
+    "bb_read": (_t_bb_read, 'прочитать общую доску (факты и заметки агентов) — args: {}'),
 }
 
 _AGENT_SYS = (
@@ -1458,13 +1544,17 @@ def _json_list(text: str):
 
 
 def _agent_run(idx: int, task: str, state: list, profile: str = "research"):
-    """ReAct-цикл одного агента. Пишет статус в state[idx], возвращает результат."""
+    """ReAct-цикл одного агента с доступом к Blackboard. Пишет статус в state[idx]."""
+    me = f"аг.{idx + 1}"
+    board = bb_context()
+    ctx = (f"\n\nОБЩАЯ ДОСКА (крошки от других/прошлых агентов — используй и дополняй "
+           f"через bb_post/bb_read):\n{board}") if board else ""
     trans = ""
     for step in range(STEP_MAX):
         if _STOP.is_set():
             state[idx]["status"] = "⏹ отменён"; return None
         state[idx].update(step=step + 1, status="думает")
-        prompt = (f"Задача: {task}\n\nЖурнал шагов:\n{trans or '(пусто)'}\n\n"
+        prompt = (f"Задача: {task}{ctx}\n\nЖурнал шагов:\n{trans or '(пусто)'}\n\n"
                   "Следующее действие — только JSON:")
         try:
             r = _mcp_call("chat", {"prompt": prompt, "session_id": _session_id(),
@@ -1475,9 +1565,12 @@ def _agent_run(idx: int, task: str, state: list, profile: str = "research"):
         act = _json_first(txt)
         if not act or "final" in (act or {}):
             state[idx].update(status="готов ✓")
-            return (act or {}).get("final", txt) if act else txt
+            final = (act or {}).get("final", txt) if act else txt
+            bb_append({"type": "note", "text": f"итог: {str(final)[:200]}", "agent": me})
+            return final
         tool = act.get("tool"); args = act.get("args", {}) if isinstance(act.get("args"), dict) else {}
         if tool in AGENT_TOOLS:
+            args["_agent"] = me                       # агент подписывает свои записи на доске
             state[idx].update(status=f"🔧 {tool}")
             try:
                 obs = AGENT_TOOLS[tool][0](args)
@@ -1520,7 +1613,9 @@ def cmd_agents(goal: str) -> None:
         subs = []
     if not subs:
         subs = [goal]
-    print(col(f"  🧠 {len(subs)} агент(а) параллельно, инструменты: {', '.join(AGENT_TOOLS)}", "dim"))
+    bb_append({"type": "note", "text": f"ЦЕЛЬ: {goal}", "agent": "оркестратор"})
+    print(col(f"  🧠 {len(subs)} агент(а) параллельно · инструменты: {', '.join(AGENT_TOOLS)}", "dim"))
+    print(col("  🗒 общая доска (Blackboard) активна — /board чтобы посмотреть", "dim"))
     state = [{"i": i + 1, "task": s, "step": 0, "status": "ожидает"} for i, s in enumerate(subs)]
     results = [None] * len(subs)
 
