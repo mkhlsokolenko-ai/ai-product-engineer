@@ -370,10 +370,12 @@ def _distill(m: dict, old_turns: list) -> None:
 
 
 def mem_add(m: dict, user: str, assistant: str) -> None:
-    m.setdefault("turns", []).append({"role": "user", "content": user})
-    m["turns"].append({"role": "assistant", "content": assistant})
-    # Компрессия: старые реплики дистиллируем в конспект, последние 6 держим дословно.
-    over = len(m["turns"]) > 12 or sum(len(t["content"]) for t in m["turns"]) > 5000
+    # В память кладём урезанные реплики — длинные исследования не должны раздувать контекст
+    # (полный ответ доступен через /more и /save; память — для преемственности, не архив).
+    m.setdefault("turns", []).append({"role": "user", "content": user[:1500]})
+    m["turns"].append({"role": "assistant", "content": assistant[:1800]})
+    # Дистилляция редкая: не после каждого сообщения, только при реальном накоплении.
+    over = len(m["turns"]) > 16 or sum(len(t["content"]) for t in m["turns"]) > 16000
     if over:
         _distill(m, m["turns"][:-6])
         m["turns"] = m["turns"][-6:]
@@ -498,17 +500,58 @@ def _spin_call(tool: str, args: dict):
             box["err"] = e
     th = threading.Thread(target=worker, daemon=True)
     start = time.time(); th.start()
-    i = 0; phrase = random.choice(_PHRASES); swap = start + 2.5
-    while th.is_alive():
-        now = time.time()
-        if now > swap:
-            phrase = random.choice(_PHRASES); swap = now + 2.5
-        frame = _SPIN[i % len(_SPIN)]
-        grad = SPIN_RAMP[i % len(SPIN_RAMP)]  # плавный перелив бледно-синий → фиолетовый
-        sys.stdout.write(f"\r  {grad}{frame} {phrase}…{C['off']} {C['dim']}{now - start:4.1f}s{C['off']}" + " " * 6)
-        sys.stdout.flush(); i += 1; time.sleep(0.1)
-    th.join()
-    sys.stdout.write("\r" + " " * 60 + "\r"); sys.stdout.flush()
+    # Готовим неблокирующее чтение клавиш, чтобы можно было прервать по Esc / Ctrl+C
+    posix = os.name != "nt" and sys.stdin.isatty()
+    old = None
+    if posix:
+        try:
+            import termios, tty
+            fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setcbreak(fd)
+        except Exception:
+            posix = False
+
+    def _poll_key():
+        try:
+            if os.name == "nt":
+                import msvcrt
+                if msvcrt.kbhit():
+                    return msvcrt.getwch()
+            elif posix:
+                import select
+                if select.select([sys.stdin], [], [], 0)[0]:
+                    return sys.stdin.read(1)
+        except Exception:
+            return None
+        return None
+
+    try:
+        i = 0; phrase = random.choice(_PHRASES); swap = start + 2.5
+        hint = ""
+        while th.is_alive():
+            now = time.time()
+            if now > swap:
+                phrase = random.choice(_PHRASES); swap = now + 2.5
+            if now - start > 2 and not hint:
+                hint = "  (Esc — прервать)"
+            k = _poll_key()
+            if k in ("\x1b", "\x03"):        # Esc или Ctrl+C — обрываем ожидание
+                sys.stdout.write("\r" + " " * 78 + "\r")
+                print(col("  ⏹ прервано (запрос отменён, управление возвращено)", "yellow"))
+                sys.stdout.flush()
+                raise KeyboardInterrupt
+            frame = _SPIN[i % len(_SPIN)]
+            grad = SPIN_RAMP[i % len(SPIN_RAMP)]  # плавный перелив бледно-синий → фиолетовый
+            sys.stdout.write(f"\r  {grad}{frame} {phrase}…{C['off']} {C['dim']}{now - start:4.1f}s"
+                             f"{C['off']}{C['dim']}{hint}{C['off']}" + " " * 4)
+            sys.stdout.flush(); i += 1; time.sleep(0.1)
+    finally:
+        if posix and old is not None:
+            try:
+                import termios
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old)
+            except Exception:
+                pass
+    sys.stdout.write("\r" + " " * 78 + "\r"); sys.stdout.flush()
     if "err" in box:
         raise box["err"]
     return box.get("res"), time.time() - start
@@ -1025,68 +1068,95 @@ def _read_input(mode: str) -> str:
         except EOFError:
             raise
     sys.stdout.write(prompt); sys.stdout.flush()
-    buf = ""; sel = 0
+    buf = ""; sel = 0; drop = False
 
-    def redraw():
+    def _cur_suggest():
+        """(kind, items) — но показываем список ТОЛЬКО если ввод помещается в одну строку
+        (иначе курсор-математика ломается на переносе — отсюда и был баг дублирования)."""
         kind, items = _suggest(buf)
         items = items[:8]
-        sys.stdout.write("\r\033[J")
-        sys.stdout.write(prompt + buf)
+        if items and pvis + len(buf) < _term_w() - 2:
+            return kind, items
+        return "none", []
+
+    def draw_suggest(kind, items):
+        """Полная перерисовка строки + выпадашка. Безопасно: вызывается только для короткого buf."""
+        nonlocal drop
+        sys.stdout.write("\r\033[J" + prompt + buf + "\n")
+        for i, it in enumerate(items):
+            name = it[0]
+            desc = it[1] if kind == "cmd" else ("папка" if name.endswith(os.sep) else "файл")
+            mark = "▸" if i == sel else " "
+            colr = C['cy'] if i == sel else C['dim']
+            dcol = C['gray'] if i == sel else C['dim']
+            sys.stdout.write(f"  {colr}{mark} {name:<22}{C['off']} {dcol}{desc}{C['off']}\n")
+        sys.stdout.write(f"\033[{len(items) + 1}A\r\033[{pvis + len(buf)}C")
+        sys.stdout.flush(); drop = True
+
+    def clear_drop():
+        nonlocal drop
+        if drop:
+            sys.stdout.write("\033[J"); sys.stdout.flush(); drop = False
+
+    def refresh():
+        """После изменения buf: показать выпадашку (короткий ввод) или просто убрать её (длинный)."""
+        kind, items = _cur_suggest()
         if items:
-            sys.stdout.write("\n")
-            for i, it in enumerate(items):
-                name = it[0]
-                desc = it[1] if kind == "cmd" else ("папка" if name.endswith(os.sep) else "файл")
-                mark = "▸" if i == sel else " "
-                colr = C['cy'] if i == sel else C['dim']
-                dcol = C['gray'] if i == sel else C['dim']
-                sys.stdout.write(f"  {colr}{mark} {name:<22}{C['off']} {dcol}{desc}{C['off']}\n")
-            sys.stdout.write(f"\033[{len(items) + 1}A")
-        sys.stdout.write(f"\r\033[{pvis + len(buf)}C")
-        sys.stdout.flush()
+            draw_suggest(kind, items)
+        else:
+            clear_drop()
 
-    def apply(kind, items):
-        nonlocal buf, sel
-        it = items[min(sel, len(items) - 1)]
-        if kind == "cmd":
-            buf = it[0] + " "
-        else:  # file: заменить текущий @-токен на дополненный путь
-            ts = buf.rfind(" ") + 1
-            buf = buf[:ts] + it[1]
-        sel = 0
-
-    redraw()
     while True:
         ch = getch()
         if ch in ("\r", "\n"):
-            kind, items = _suggest(buf)
-            if kind == "cmd" and items:
+            kind, items = _cur_suggest()
+            if kind == "cmd" and items:                      # Enter выбирает подсвеченную команду
                 chosen = items[min(sel, len(items) - 1)][0]
-                sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
+                clear_drop(); sys.stdout.write("\n"); sys.stdout.flush()
                 return chosen
-            if kind == "file" and items:      # Enter по файлу — дополнить, не отправлять
-                apply(kind, items); redraw(); continue
-            sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
+            if kind == "file" and items:                     # Enter по файлу — дополнить, не отправлять
+                it = items[min(sel, len(items) - 1)]
+                ts = buf.rfind(" ") + 1; buf = buf[:ts] + it[1]; sel = 0; refresh(); continue
+            clear_drop(); sys.stdout.write("\n"); sys.stdout.flush()
             return buf
-        if ch == "\x03":
-            sys.stdout.write("\r\033[J"); sys.stdout.flush()
+        if ch == "\x03":                                     # Ctrl+C
+            clear_drop(); sys.stdout.write("\n"); sys.stdout.flush()
             raise KeyboardInterrupt
-        if ch in ("\x08", "\x7f"):
-            buf = buf[:-1]; sel = 0; redraw(); continue
-        if ch == "\t":
-            kind, items = _suggest(buf)
+        if ch in ("\x08", "\x7f"):                            # Backspace
+            if not buf:
+                continue
+            buf = buf[:-1]; sel = 0
+            kind, items = _cur_suggest()
             if items:
-                apply(kind, items); redraw()
+                draw_suggest(kind, items)
+            else:
+                clear_drop(); sys.stdout.write("\b \b"); sys.stdout.flush()
+            continue
+        if ch == "\t":                                       # Tab — дополнить выбранное
+            kind, items = _cur_suggest()
+            if items:
+                it = items[min(sel, len(items) - 1)]
+                if kind == "cmd":
+                    buf = it[0] + " "
+                else:
+                    ts = buf.rfind(" ") + 1; buf = buf[:ts] + it[1]
+                sel = 0; refresh()
             continue
         if ch in ("UP", "DOWN"):
-            _, items = _suggest(buf)
+            kind, items = _cur_suggest()
             if items:
-                n = min(len(items), 8)
-                sel = (sel + (1 if ch == "DOWN" else -1)) % n
-                redraw()
+                sel = (sel + (1 if ch == "DOWN" else -1)) % len(items)
+                draw_suggest(kind, items)
             continue
-        if ch and ch >= " ":
-            buf += ch; sel = 0; redraw()
+        if ch and ch >= " ":                                 # печатный символ
+            buf += ch; sel = 0
+            kind, items = _cur_suggest()
+            if items:
+                draw_suggest(kind, items)
+            else:
+                if drop:
+                    clear_drop()
+                sys.stdout.write(ch); sys.stdout.flush()     # ПРОСТО эхо — без полной перерисовки
 
 
 def _skills_menu() -> None:
@@ -1247,7 +1317,7 @@ def _mem_turn(profile: str, prompt: str) -> None:
     """Один ход диалога с памятью: подмешиваем контекст и файлы, сохраняем ответ."""
     m = mem_load()
     base = _CODE_SYS if profile == "code" else ""
-    mx = 8000 if profile == "research" else 4000  # research/исследования не режем
+    mx = 32000 if profile == "research" else 8000  # research не режем — цельный документ за раз
     full, mem_note = _build_prompt(prompt)
     text = _chat(profile, full, mem_system(base, m), mx)
     if text:
