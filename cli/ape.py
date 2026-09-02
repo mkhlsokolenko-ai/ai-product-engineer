@@ -330,37 +330,64 @@ def mem_save(m: dict) -> None:
 
 
 def mem_system(base: str, m: dict) -> str:
-    """Собирает system-промпт с памятью: сжатое резюме + последние реплики."""
+    """Собирает system-промпт с памятью: дистиллят-конспект + последние реплики дословно."""
     ctx = ""
     if m.get("summary"):
-        ctx += f"\n\n[Память диалога, сжато]\n{m['summary']}"
+        ctx += ("\n\n[Конспект диалога — опирайся на него, чтобы продолжать без потерь]\n"
+                + m["summary"])
     recent = m.get("turns", [])[-6:]
     if recent:
-        ctx += "\n\n[Последние реплики]\n" + "\n".join(
+        ctx += "\n\n[Последние реплики дословно]\n" + "\n".join(
             f"{'Ты' if t['role'] == 'user' else 'Ассистент'}: {t['content'][:600]}" for t in recent)
     return (base + ctx).strip() if ctx else base
+
+
+_DISTILL_PROMPT = (
+    "Ты ведёшь рабочий конспект диалога, чтобы ассистент мог вернуться к нему и продолжить "
+    "БЕЗ потери сути и хода рассуждений. Обнови конспект строго по шаблону — кратко, по делу, "
+    "маркерами; сохраняй конкретику (имена, числа, пути, решения и ПОЧЕМУ так решили):\n"
+    "## Цель\n## Ключевые решения (что и почему)\n## Факты и данные\n"
+    "## Артефакты (файлы, код, ссылки)\n## Ход рассуждений (кратко, чтобы вернуться в контекст)\n"
+    "## Открытые вопросы / следующие шаги\n\n"
+    "Текущий конспект:\n{summary}\n\nНовые реплики:\n{transcript}\n\n"
+    "Верни ТОЛЬКО обновлённый конспект по шаблону."
+)
+
+
+def _distill(m: dict, old_turns: list) -> None:
+    """Сворачивает реплики old_turns в структурный конспект (дистиллят)."""
+    transcript = "\n".join(f"{t['role']}: {t['content'][:1000]}" for t in old_turns)
+    print(col("  ⟳ дистиллирую память диалога…", "dim"), file=sys.stderr)
+    try:
+        r = _mcp_call("chat", {
+            "prompt": _DISTILL_PROMPT.format(summary=m.get("summary", "") or "(пусто)",
+                                             transcript=transcript),
+            "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 700})
+        if r.get("text"):
+            m["summary"] = r["text"].strip()
+    except Exception:
+        pass
 
 
 def mem_add(m: dict, user: str, assistant: str) -> None:
     m.setdefault("turns", []).append({"role": "user", "content": user})
     m["turns"].append({"role": "assistant", "content": assistant})
-    # Компрессия: старые реплики сворачиваем в короткое резюме.
+    # Компрессия: старые реплики дистиллируем в конспект, последние 6 держим дословно.
     over = len(m["turns"]) > 12 or sum(len(t["content"]) for t in m["turns"]) > 5000
     if over:
-        keep = m["turns"][-6:]
-        old = m["turns"][:-6]
-        transcript = "\n".join(f"{t['role']}: {t['content'][:800]}" for t in old)
-        print(col("  ⟳ сжимаю память диалога…", "dim"), file=sys.stderr)
-        try:
-            r = _mcp_call("chat", {
-                "prompt": "Сожми в 5–8 коротких пунктов ключевые факты, решения и контекст "
-                          "этого диалога, чтобы можно было продолжить работу. Без воды, только суть.\n\n"
-                          f"Текущее резюме:\n{m.get('summary','')}\n\nСтарые реплики:\n{transcript}",
-                "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 400})
-            m["summary"] = (r.get("text") or m.get("summary", "")).strip()
-            m["turns"] = keep
-        except Exception:
-            pass
+        _distill(m, m["turns"][:-6])
+        m["turns"] = m["turns"][-6:]
+    mem_save(m)
+
+
+def mem_distill_now(m: dict) -> None:
+    """Принудительная дистилляция всего, кроме последних 2 реплик (команда /distill)."""
+    if len(m.get("turns", [])) <= 2:
+        print(col("  Пока нечего дистиллировать.", "gray")); return
+    _distill(m, m["turns"][:-2])
+    m["turns"] = m["turns"][-2:]
+    mem_save(m)
+    print(col("  Готово. Конспект обновлён — /memory чтобы посмотреть.", "cy"))
     mem_save(m)
 
 
@@ -862,11 +889,11 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/more{C['off']}            раскрыть последний ответ полностью
     {C['cy']}/save{C['off']} <файл>     сохранить на компьютер (.md/.py/… — код запишется без обвязки)
     {C['cy']}/save cloud{C['off']} <имя> загрузить в свой проект (портал → «Мой проект»)
-    {C['cy']}/memory{C['off']}          показать, что агент помнит
+    {C['cy']}/memory{C['off']}          показать конспект памяти · {C['cy']}/distill{C['off']} — сжать сейчас
     {C['cy']}/forget{C['off']}          очистить память этой сессии
     {C['cy']}/usage{C['off']}           расход и остаток квоты
     {C['cy']}/whoami{C['off']} {C['dim']}·{C['off']} {C['cy']}/login{C['off']} {C['dim']}·{C['off']} {C['cy']}/logout{C['off']} {C['dim']}·{C['off']} {C['cy']}/clear{C['off']} {C['dim']}·{C['off']} {C['cy']}/exit{C['off']}
-  {C['dim']}Без / — запрос в текущем режиме. Файл в контекст: {C['off']}{C['cy']}@путь/к/файлу{C['off']}{C['dim']} (или {C['off']}{C['cy']}@"путь с пробелами"{C['off']}{C['dim']}).{C['off']}
+  {C['dim']}Без / — запрос в текущем режиме. Файл в контекст: {C['off']}{C['cy']}@путь{C['off']}{C['dim']} — жми {C['off']}{C['cy']}Tab{C['off']}{C['dim']} для автодополнения (↑↓ выбор).{C['off']}
   {C['dim']}Память копится и сжимается сама. Папки не сканируются — только явно указанные файлы.{C['off']}"""
 
 
@@ -916,7 +943,8 @@ _CMDS = [
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
     ("/save", "сохранить: /save <файл> (на комп) · /save cloud <имя> (в проект)"),
-    ("/memory", "что агент помнит"),
+    ("/memory", "показать конспект памяти"),
+    ("/distill", "сжать память в конспект сейчас"),
     ("/forget", "очистить память сессии"),
     ("/usage", "расход и остаток квоты"),
     ("/whoami", "кто я"),
@@ -941,18 +969,55 @@ def _topbar(mode: str) -> str:
     return f"{dim}╭─{cy}{title}{dim}{'─' * fill}{rem}─╮{o}"
 
 
-def _matches(buf: str):
-    if not buf.startswith("/"):
+def _cur_token(buf: str) -> str:
+    i = buf.rfind(" ")
+    return buf[i + 1:] if i >= 0 else buf
+
+
+def _path_suggest(token: str):
+    """Автодополнение пути для @-упоминания. Возвращает [(показать, вставить_токен)]."""
+    raw = token[1:]
+    if raw.startswith('"'):
+        raw = raw[1:]
+    typed_dir = os.path.dirname(raw)
+    base = os.path.basename(raw)
+    real_dir = os.path.expanduser(typed_dir) if typed_dir else "."
+    try:
+        entries = os.listdir(real_dir or ".")
+    except Exception:
         return []
-    return [c for c in _CMDS if c[0].startswith(buf.lower())] or []
+    lb = base.lower()
+    hits = sorted(e for e in entries if e.lower().startswith(lb) and not e.startswith("."))
+    out = []
+    for e in hits[:8]:
+        full_typed = os.path.join(typed_dir, e) if typed_dir else e
+        isdir = os.path.isdir(os.path.expanduser(full_typed))
+        display = e + (os.sep if isdir else "")
+        need_q = " " in full_typed
+        if isdir:
+            ins = f'@"{full_typed}{os.sep}' if need_q else f"@{full_typed}{os.sep}"
+        else:
+            ins = f'@"{full_typed}"' if need_q else f"@{full_typed}"
+        out.append((display, ins))
+    return out
+
+
+def _suggest(buf: str):
+    """(kind, items). kind: 'cmd' → [(имя,описание)], 'file' → [(показать,вставить)], иначе 'none'."""
+    if buf.startswith("/") and " " not in buf:
+        return "cmd", [c for c in _CMDS if c[0].startswith(buf.lower())]
+    tok = _cur_token(buf)
+    if tok.startswith("@"):
+        return "file", _path_suggest(tok)
+    return "none", []
 
 
 def _read_input(mode: str) -> str:
-    """Полноширинная строка ввода с выпадающим списком команд после '/'.
-    Fallback на обычный input(), если raw-режим недоступен (пайп/неподдерж.)."""
+    """Полноширинная строка ввода: '/' → команды, '@путь' → автодополнение файлов (Tab).
+    Fallback на input(), если raw-режим недоступен (пайп/неподдерж.)."""
     print(_topbar(mode))
     prompt = f"  {C['cy']}›{C['off']} "
-    pvis = 4  # видимая длина "  › "
+    pvis = 4
     getch = _mk_getch()
     if getch is None or not sys.stdin.isatty():
         try:
@@ -960,54 +1025,67 @@ def _read_input(mode: str) -> str:
         except EOFError:
             raise
     sys.stdout.write(prompt); sys.stdout.flush()
-    buf = ""; sel = 0; drawn = 0
+    buf = ""; sel = 0
 
     def redraw():
-        nonlocal drawn
-        ms = _matches(buf)
-        sys.stdout.write("\r\033[J")  # в начало строки + очистить всё ниже
+        kind, items = _suggest(buf)
+        items = items[:8]
+        sys.stdout.write("\r\033[J")
         sys.stdout.write(prompt + buf)
-        if ms:
+        if items:
             sys.stdout.write("\n")
-            for i, (name, desc) in enumerate(ms[:8]):
+            for i, it in enumerate(items):
+                name = it[0]
+                desc = it[1] if kind == "cmd" else ("папка" if name.endswith(os.sep) else "файл")
                 mark = "▸" if i == sel else " "
-                if i == sel:
-                    sys.stdout.write(f"  {C['cy']}{mark} {name:<9}{C['off']} {C['gray']}{desc}{C['off']}\n")
-                else:
-                    sys.stdout.write(f"  {C['dim']}{mark} {name:<9} {desc}{C['off']}\n")
-            drawn = min(len(ms), 8)
-            sys.stdout.write(f"\033[{drawn + 1}A")  # вернуть курсор на строку ввода
-        else:
-            drawn = 0
-        sys.stdout.write(f"\r\033[{pvis + len(buf)}C")  # к концу набранного
+                colr = C['cy'] if i == sel else C['dim']
+                dcol = C['gray'] if i == sel else C['dim']
+                sys.stdout.write(f"  {colr}{mark} {name:<22}{C['off']} {dcol}{desc}{C['off']}\n")
+            sys.stdout.write(f"\033[{len(items) + 1}A")
+        sys.stdout.write(f"\r\033[{pvis + len(buf)}C")
         sys.stdout.flush()
+
+    def apply(kind, items):
+        nonlocal buf, sel
+        it = items[min(sel, len(items) - 1)]
+        if kind == "cmd":
+            buf = it[0] + " "
+        else:  # file: заменить текущий @-токен на дополненный путь
+            ts = buf.rfind(" ") + 1
+            buf = buf[:ts] + it[1]
+        sel = 0
 
     redraw()
     while True:
         ch = getch()
         if ch in ("\r", "\n"):
-            ms = _matches(buf)
-            # если открыт список — Enter выбирает подсвеченную команду; иначе отправляет как есть
-            chosen = ms[min(sel, len(ms) - 1)][0] if ms else buf
+            kind, items = _suggest(buf)
+            if kind == "cmd" and items:
+                chosen = items[min(sel, len(items) - 1)][0]
+                sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
+                return chosen
+            if kind == "file" and items:      # Enter по файлу — дополнить, не отправлять
+                apply(kind, items); redraw(); continue
             sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
-            return chosen
-        if ch == "\x03":  # Ctrl+C
+            return buf
+        if ch == "\x03":
             sys.stdout.write("\r\033[J"); sys.stdout.flush()
             raise KeyboardInterrupt
-        if ch in ("\x08", "\x7f"):  # Backspace
+        if ch in ("\x08", "\x7f"):
             buf = buf[:-1]; sel = 0; redraw(); continue
-        if ch == "\t":  # Tab — докомплитить выбранную команду
-            ms = _matches(buf)
-            if ms:
-                buf = ms[sel][0] + " "; sel = 0; redraw()
+        if ch == "\t":
+            kind, items = _suggest(buf)
+            if items:
+                apply(kind, items); redraw()
             continue
         if ch in ("UP", "DOWN"):
-            ms = _matches(buf)
-            if ms:
-                sel = (sel + (1 if ch == "DOWN" else -1)) % min(len(ms), 8)
+            _, items = _suggest(buf)
+            if items:
+                n = min(len(items), 8)
+                sel = (sel + (1 if ch == "DOWN" else -1)) % n
                 redraw()
             continue
-        if ch and ch >= " ":  # печатный символ
+        if ch and ch >= " ":
             buf += ch; sel = 0; redraw()
 
 
@@ -1125,8 +1203,12 @@ def _repl() -> None:
                 elif cmd == "memory":
                     m = mem_load()
                     if m.get("summary"):
-                        print(col("  Сжато:", "dim")); print("  " + m["summary"].replace("\n", "\n  "))
-                    print(col(f"  реплик в памяти: {len(m.get('turns', []))}", "dim"))
+                        print(col("  Конспект:", "dim")); print("  " + m["summary"].replace("\n", "\n  "))
+                    else:
+                        print(col("  Конспект пуст (дистиллируется при накоплении диалога).", "dim"))
+                    print(col(f"  реплик дословно в памяти: {len(m.get('turns', []))}", "dim"))
+                elif cmd == "distill":
+                    mem_distill_now(mem_load())
                 elif cmd == "forget":
                     try:
                         os.remove(_mem_path())
