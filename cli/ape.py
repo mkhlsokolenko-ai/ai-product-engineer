@@ -499,7 +499,7 @@ def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None
     if res.get("error"):
         print(col(res.get("message", res["error"]), "yellow")); return None
     text = res.get("text", "")
-    print(text)
+    _print_answer(text, res.get("truncated"))
     q = (res.get("quota") or {}).get("week", {})
     if q.get("remaining") is not None:
         LAST_REMAIN = q["remaining"]
@@ -512,6 +512,29 @@ def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None
         tail += f" · осталось {q.get('remaining',0):,}".replace(",", " ")
     print(col(tail, "dim"), file=sys.stderr)
     return text
+
+
+LAST_ANSWER = ""       # полный текст последнего ответа (для /more и /save)
+PREVIEW_LINES = 24     # сколько строк показываем сразу
+
+
+def _print_answer(text: str, truncated: bool = False) -> None:
+    """Печатает ответ; длинный сворачивает до превью с подсказкой /more и /save."""
+    global LAST_ANSWER
+    LAST_ANSWER = text
+    lines = text.split("\n")
+    if len(lines) <= PREVIEW_LINES + 3 and sys.stdout.isatty():
+        print(text)
+    elif not sys.stdout.isatty():
+        print(text)  # пайп/скрипт — не режем
+    else:
+        print("\n".join(lines[:PREVIEW_LINES]))
+        rest = len(lines) - PREVIEW_LINES
+        print(col(f"  ⋯ ещё {rest} строк · /more — раскрыть полностью · /save <файл> — сохранить",
+                  "cy"))
+    if truncated:
+        print(col("  ⚠ ответ упёрся в лимит длины — повтори «продолжи» или подними лимит "
+                  "(/ask с большим объёмом)", "yellow"))
 
 
 def cmd_code(a):
@@ -601,7 +624,7 @@ def build_parser() -> argparse.ArgumentParser:
         c.add_argument("-f", "--file", action="append", help="приложить файл (можно несколько)")
         c.add_argument("-s", "--system", default="", help="системный промпт")
         c.add_argument("--stdin", action="store_true", help="дочитать запрос из stdin (pipe)")
-        c.add_argument("--max-tokens", type=int, default=2048, dest="max_tokens")
+        c.add_argument("--max-tokens", type=int, default=4096, dest="max_tokens")
         c.set_defaults(func=fn)
 
     rg = sub.add_parser("rag", help="своя RAG-коллекция")
@@ -683,6 +706,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
+    {C['cy']}/more{C['off']}            раскрыть последний ответ · {C['cy']}/save{C['off']} <файл> — сохранить
     {C['cy']}/memory{C['off']}          показать, что агент помнит
     {C['cy']}/forget{C['off']}          очистить память этой сессии
     {C['cy']}/usage{C['off']}           расход и остаток квоты
@@ -734,6 +758,8 @@ _CMDS = [
     ("/mode", "режим по умолчанию (code|ask)"),
     ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
+    ("/more", "раскрыть последний ответ полностью"),
+    ("/save", "сохранить последний ответ в файл"),
     ("/memory", "что агент помнит"),
     ("/forget", "очистить память сессии"),
     ("/usage", "расход и остаток квоты"),
@@ -949,6 +975,22 @@ def _repl() -> None:
                     except FileNotFoundError:
                         pass
                     print(col("  Память этой сессии очищена.", "cy"))
+                elif cmd == "more":
+                    if LAST_ANSWER:
+                        print(LAST_ANSWER)
+                    else:
+                        print(col("  Нечего раскрывать — сначала задай вопрос.", "gray"))
+                elif cmd == "save":
+                    if not LAST_ANSWER:
+                        print(col("  Нечего сохранять.", "gray"))
+                    else:
+                        fn = rest.strip() or "answer.md"
+                        try:
+                            with open(fn, "w", encoding="utf-8") as f:
+                                f.write(LAST_ANSWER)
+                            print(col(f"  Сохранено в {fn} ({len(LAST_ANSWER)} символов)", "cy"))
+                        except Exception as e:  # noqa: BLE001
+                            print(col(f"  Не удалось сохранить: {e}", "yellow"))
                 elif cmd == "usage":
                     cmd_usage(None)
                 elif cmd == "whoami":
@@ -974,7 +1016,8 @@ def _mem_turn(profile: str, prompt: str) -> None:
     """Один ход диалога с памятью: подмешиваем контекст, сохраняем ответ."""
     m = mem_load()
     base = _CODE_SYS if profile == "code" else ""
-    text = _chat(profile, prompt, mem_system(base, m), 2048)
+    mx = 8000 if profile == "research" else 4000  # research/исследования не режем
+    text = _chat(profile, prompt, mem_system(base, m), mx)
     if text:
         mem_add(m, prompt, text)
 

@@ -66,6 +66,8 @@ def register(mcp) -> None:
             "model": res["model"],
             "input_tokens": res["input_tokens"],
             "output_tokens": res["output_tokens"],
+            "finish_reason": res.get("finish_reason", ""),
+            "truncated": res.get("finish_reason") == "length",
             "cost_rub": cost,
             "quota": quota,
         }

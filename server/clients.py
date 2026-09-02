@@ -69,7 +69,8 @@ async def chat(
                 r.raise_for_status()
                 data = r.json()
             usage = data.get("usage", {})
-            text = data["choices"][0]["message"].get("content") or ""
+            choice = data["choices"][0]
+            text = choice["message"].get("content") or ""
             # Reasoning-модели (DeepSeek-V4-pro) иногда тратят весь бюджет на "мышление"
             # и возвращают пустой content (не ошибка). Трактуем как провал -> следующая модель.
             if not text.strip():
@@ -80,6 +81,7 @@ async def chat(
                 "model": m,
                 "input_tokens": int(usage.get("prompt_tokens", 0)),
                 "output_tokens": int(usage.get("completion_tokens", 0)),
+                "finish_reason": choice.get("finish_reason", ""),
             }
         except Exception as e:  # noqa: BLE001 — каскад: падаем к следующей модели
             last_err = e
