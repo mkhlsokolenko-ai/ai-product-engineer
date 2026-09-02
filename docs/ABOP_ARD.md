@@ -1,8 +1,29 @@
 # ABOP — Architecture Design (ARD / AOP)
 
-> Рабочее понимание: **ABOP** — платформа для агентных бизнес-операций (продуктизация
-> принципов, обкатанных в CLI `ape`). Расшифровку/скоуп уточнить у владельца.
-> Статус: **v0.1, draft**. Источник принципов — `ape` CLI (агенты, волны, Blackboard, tools).
+> **ABOP = продуктизация LUDA v2** (рантайм исполнения агентов, эволюция VRATA — переименование +
+> ребилд на паттернах **openclaw**: Gateway / Channel / Tool-Skill / pairing-approval HITL /
+> security-first). Отдельный продукт и репозиторий, **шире учебного проекта**; работает в
+> регулируемом периметре (ФСТЭК/ДСП/ФЗ-152). Python, максимум переиспользования кода VRATA.
+> Каноны LUDA v2 — `Downloads/LUDA pivot/{PRD,ADR,TDR,AOP}.md`; план — `slAVA/docs/REBUILD_PLAN_ABOP_LUDA_v2.md`.
+>
+> **Учебный проект (ai-product-engineer + CLI `ape`) — безопасный полигон**, где мы обкатываем
+> ПРИНЦИПЫ и АРХИТЕКТУРУ (агенты/волны/Blackboard/tools/Data Plane), затем переносим в ABOP.
+> Статус: **v0.2, draft**.
+
+## 0. Топология продуктов (3 продукта, 3 репозитория)
+```
+MIRA   →   LUDA v2   →   sLAVA        →   ABOP
+портф.     диагноз       восполнение      исполнение
+           (аудит        контекста        (агенты,
+            готовности)   (RAG/норматив)    рантайм)
+```
+- **LUDA v2** — аудитор готовности процесса к ИИ-агенту: Пробы→Evidence→оси→автономия **A0–A4**→
+  **3 контракта** (`CapabilityRequest` / `DeploymentContract` / `BaselineMeasurement`).
+- **ABOP** — рантайм агентов (этот документ): Gateway/каналы/тулы/HITL/security.
+- **sLAVA** — RAG по нормативке. **MIRA** — портфельный слой.
+- Связь между репо — **только версионированные схемы контрактов** (CI `check-no-foreign-imports`).
+- **Жёсткая зависимость (AOP §7.3):** ABOP **не может** дать агенту autonomy_level выше, чем в
+  `DeploymentContract` от LUDA. Единственная обязательная связь.
 
 ---
 
@@ -99,6 +120,47 @@ Blackboard). Но главного нет: **готового под агент�
 - **computed**: производные сущности (RFM из Transaction, воронка из событий) —
   фактически рецепт, чей выход снова кладётся в Data Plane как сущность.
 
+### 3.5-bis. Data Plane УЖЕ ЧАСТИЧНО ЕСТЬ в LUDA (не изобретаем заново)
+В репозитории LUDA это фактически стартовало — переиспользуем/формализуем, а не пишем с нуля:
+- `luda/connectors/base.py` → **Source Adapter** (контракт коннектора; read-only метрики).
+- `luda/canon/` (`normalize, align, contradictions, graph, morph, temporal, thresholds, codelist`)
+  → движок **канонизации/нормализации** источник→canonical (ядро Data Plane).
+- `luda/spec/process_agent_spec.schema.json` + `emit.py` + `validate.py` → **Data Contracts**
+  (Process Agent Spec: CapabilityRequest / DeploymentContract / BaselineMeasurement).
+- `rules-engine` (декларативный YAML: ФЗ-152, reversibility) → декларативные правила поверх данных.
+В ABOP/учебном проекте мы даём **упрощённый аналог** этого слоя; в проде — код LUDA.
+
+### 3.6-bis. РЕЦЕПТЫ ДАННЫХ пишет ЧЕЛОВЕК (ключевое требование, self-serve)
+Адаптер источник→canonical должен создаваться **не только программистом**. Доменный эксперт
+описывает **декларативный «рецепт данных»** — без исполняемого кода — который переводит источник
+в каноническую сущность. Это ровно паттерн LUDA **VerticalPack** (манифест + пробы + `mapping` +
+`rules YAML` + метрики, «без исполняемого кода», ведёт эксперт, **строгий YAML/JSON-валидатор**;
+ADR-023).
+
+**Data Recipe (декларативный, версионируемый):**
+```yaml
+recipe: acme-invoices        # id рецепта данных
+version: 1
+source: {kind: imap, ref: acme, scope: "label:billing"}   # откуда (адаптер + фильтр)
+entity: invoice              # какую каноническую сущность производим
+map:                         # маппинг полей источника → canonical (без кода)
+  id:        "$.message_id"
+  amount:    {from: "$.attachments[?(@.kind=='invoice')].total", cast: money}
+  customer:  {lookup: customer, by: "$.from.email"}
+  due_date:  {from: "$.body", extract: date}   # extract = встроенный экстрактор
+rules:                       # декларативные правила/валидация (как rules-engine LUDA)
+  - assert: "amount > 0"
+  - pii_mask: ["$.from.email"]
+emit: {schema: invoice, schema_version: "1.0", ttl_sec: 86400}
+```
+Свойства:
+- **Декларативно** (YAML/JSON), **валидируется схемой** (нельзя сломать канон);
+- **версионируется** и хранится как артефакт (переживает, ревьюится, откатывается);
+- **два вида рецептов, не путать:** *Data Recipe* (этот — источник→canonical, пишет эксперт) vs
+  *Agent Recipe* (плейбук: агент+tools+LLM, напр. дайджест/RFM — §4);
+- редактор рецептов данных (no-code UI + предпросмотр результата на реальной выборке) — часть
+  фронта ABOP.
+
 ### 3.6 Хранение и связь с Blackboard
 - Канонические сущности — в **хранилище Data Plane** (Postgres/JSONB + опц. RAG-индекс для
   семантического поиска). Адаптер = ETL источник → canonical store.
@@ -149,12 +211,21 @@ artifacts[], provenance}`. Один слой обслуживает и CLI `ape`
 
 ---
 
-## 8. Открытые вопросы (решить с владельцем)
-1. Точная расшифровка/скоуп **ABOP** и его целевые пользователи (курс? прод? LUDA-контур?).
-2. Где живёт код ABOP (отдельный репозиторий?) и как переиспользуем шлюз/Keycloak/Qwen-бокс.
-3. Хранилище Data Plane: Postgres+JSONB vs отдельный движок; нужен ли семантический слой (RAG) поверх.
-4. Первый источник для Data Plane (что реально подключено: почта? Jira? Confluence? БД?).
-5. Мультитенантность источников: общие курсовые vs BYO-креды на пользователя.
+## 8. Открытые вопросы
+Решено:
+- ✅ **Скоуп ABOP** — продуктизация LUDA v2 (рантайм VRATA на паттернах openclaw), отдельный
+  продукт/репо, регулируемый периметр. Учебный проект — полигон принципов.
+- ✅ **Рецепты данных пишет человек** — декларативно (VerticalPack-стиль), no-code, валидируется схемой.
+- ✅ **Data Plane частично есть** в LUDA (`canon/`, `connectors/`, `spec/`, rules-engine).
+
+Осталось:
+1. Хранилище Data Plane в проде: Postgres+JSONB (как в LUDA) vs отдельный движок; RAG-слой поверх — где.
+2. Первый источник/вертикаль для Data Plane (в LUDA стартовая — **1С month-end**, `vp-1c-monthend`;
+   в учебном — что берём: почта/Jira/CSV?).
+3. Как физически переиспользуем шлюз/Keycloak/Qwen из учебного контура в ABOP-периметре
+   (регуляторка: `external_egress` через прокси sLAVA, `local_llm` — внутренний, ПДн-маскирование).
+4. Мультитенантность источников: общие vs BYO-креды.
+5. Формат редактора Data Recipe (no-code UI) на фронте ABOP.
 
 ---
 
