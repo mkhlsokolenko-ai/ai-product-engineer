@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+APE_VERSION = "1.10.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -514,8 +515,15 @@ def _spin_call(tool: str, args: dict):
         try:
             if os.name == "nt":
                 import msvcrt
-                if msvcrt.kbhit():
-                    return msvcrt.getwch()
+                last = None
+                while msvcrt.kbhit():                 # вычитываем ВСЕ клавиши из буфера
+                    c = msvcrt.getwch()
+                    if c in ("\x00", "\xe0"):         # спец-клавиша — отбросить второй байт
+                        msvcrt.getwch(); continue
+                    if c in ("\x1b", "\x03"):         # Esc/Ctrl+C — сразу возвращаем
+                        return c
+                    last = c
+                return last
             elif posix:
                 import select
                 if select.select([sys.stdin], [], [], 0)[0]:
@@ -543,7 +551,7 @@ def _spin_call(tool: str, args: dict):
             grad = SPIN_RAMP[i % len(SPIN_RAMP)]  # плавный перелив бледно-синий → фиолетовый
             sys.stdout.write(f"\r  {grad}{frame} {phrase}…{C['off']} {C['dim']}{now - start:4.1f}s"
                              f"{C['off']}{C['dim']}{hint}{C['off']}" + " " * 4)
-            sys.stdout.flush(); i += 1; time.sleep(0.1)
+            sys.stdout.flush(); i += 1; time.sleep(0.05)  # частый опрос — Esc ловится быстро
     finally:
         if posix and old is not None:
             try:
@@ -944,7 +952,7 @@ def _banner() -> None:
     print()
     for i, l in enumerate(_APE):
         gc = GRAD[min(i + 1, len(GRAD) - 1)]
-        tail = "   AI Product Engineer" if i == 0 else "   CLI курса · engineer-ai.pro" if i == 1 else ""
+        tail = "   AI Product Engineer" if i == 0 else f"   CLI курса · engineer-ai.pro · v{APE_VERSION}" if i == 1 else ""
         print(f"   {b}{gc}{l}{o}{g}{tail}{o}")
     who = _claims().get("preferred_username")
     print()
