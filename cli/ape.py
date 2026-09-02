@@ -556,36 +556,47 @@ def _fmt_rem(n) -> str:
     return (f"{n/1e6:.1f}M" if n >= 1e6 else f"{n/1e3:.0f}k" if n >= 1e3 else str(n))
 
 
+# Морда обезьяны (ape) — объёмная, улыбается. Тёплый градиент по строкам.
+_MONKEY = [
+    "   ▄▟▀▀▀▀▀▀▀▙▄   ",
+    "  ▟█ ▄▄   ▄▄ █▙  ",
+    " ██▌ ◕ ▏ ▕ ◕ ▐██ ",
+    " ██▌    ▼    ▐██ ",
+    "  ▜█▖ ╲___╱ ▗█▛  ",
+    "   ▜██▄▄▄▄▄██▛   ",
+    "     ▀▀▀▀▀▀▀     ",
+]
+_BROWN = ["\033[38;5;180m", "\033[38;5;180m", "\033[38;5;137m",
+          "\033[38;5;137m", "\033[38;5;130m", "\033[38;5;94m", "\033[38;5;94m"]
+# Крупные буквы APE (AI Product Engineer)
+_APE = [
+    "█▀█ █▀█ █▀▀",
+    "█▀█ █▀▀ █▀▀",
+    "▀ ▀ ▀   ▀▀▀",
+]
+
+
 def _banner() -> None:
     o, b = C["off"], C["bold"]
     cy, cy2, g, dim = C["cy"], C["cy2"], C["gray"], C["dim"]
-    # объёмное лого: треугольник-гора с узлами, сине-голубой градиент по строкам
-    logo = [
-        "    ▁▁▁    ",
-        "   ▟███▙   ",
-        "  ▟█████▙  ",
-        " ▟███████▙ ",
-        "▟█████████▙",
-        "◥▔▔▔●▔▔▔●▔◤",
-    ]
-    right = [
-        "",
-        f"{b}{cy}a p e{o}",
-        f"{g}CLI курса AI Product Engineer{o}",
-        f"{dim}engineer-ai.pro · Qwen3.8-27B / DeepSeek{o}",
-        "",
-        "",
-    ]
-    print()
-    for i, l in enumerate(logo):
-        gc = GRAD[min(i, len(GRAD) - 1)]
-        r = right[i] if i < len(right) else ""
-        print(f"  {gc}{l}{o}   {r}")
-    who = _claims().get("preferred_username")
-    if who:
-        print(f"  {dim}вошёл как {cy2}{who}{dim} · память диалога включена · /help — команды{o}\n")
+    if not _ANSI:
+        _BROWN_ = ["" for _ in _MONKEY]
     else:
-        print(f"  {C['yellow']}не вошёл — набери /login{o}\n")
+        _BROWN_ = _BROWN
+    print()
+    for i, l in enumerate(_MONKEY):
+        print(f"   {_BROWN_[i]}{l}{o}")
+    print()
+    for i, l in enumerate(_APE):
+        gc = GRAD[min(i + 1, len(GRAD) - 1)]
+        tail = "   AI Product Engineer" if i == 0 else "   CLI курса · engineer-ai.pro" if i == 1 else ""
+        print(f"   {b}{gc}{l}{o}{g}{tail}{o}")
+    who = _claims().get("preferred_username")
+    print()
+    if who:
+        print(f"   {dim}вошёл как {cy2}{who}{dim} · память диалога включена · /help — команды{o}\n")
+    else:
+        print(f"   {C['yellow']}не вошёл — набери /login{o}\n")
 
 
 _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['off']}
