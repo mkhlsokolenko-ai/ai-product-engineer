@@ -438,7 +438,8 @@ def skills_system(base: str) -> str:
 def _read_prompt(text: str | None, files: list[str], stdin: bool) -> str:
     parts = []
     if text:
-        parts.append(text)
+        full, _ = _build_prompt(text)  # раскрыть @путь-упоминания файлов
+        parts.append(full)
     for fp in files or []:
         with open(fp, encoding="utf-8") as f:
             parts.append(f"\n\n=== файл {os.path.basename(fp)} ===\n{f.read()}")
@@ -637,6 +638,58 @@ def do_save(rest: str) -> None:
             print(col(f"  Не удалось сохранить: {e}", "yellow"))
 
 
+# ─────────────────────── Доступ к файлам пользователя (по прямому пути) ───────────────────────
+
+MAX_FILE = 200_000  # максимум символов на файл (чтобы не раздуть контекст)
+
+
+def _expand_files(text: str):
+    """Подхватывает файлы, указанные ЯВНО: @путь, @"путь с пробелами" или вся строка = путь.
+    Папки не сканирует. Возвращает (чистый_текст_без_упоминаний, [(имя, содержимое, пометка)])."""
+    atts = []; seen = set()
+
+    def add(path: str) -> bool:
+        p = os.path.expanduser(path.strip().strip('"'))
+        if not p or p in seen:
+            return p in seen
+        if os.path.isdir(p):
+            print(col(f"  ⚠ {p} — это папка; укажи конкретный файл (папки не сканирую)", "yellow"))
+            return False
+        if not os.path.isfile(p):
+            return False
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                data = f.read(MAX_FILE + 1)
+        except Exception as e:  # noqa: BLE001
+            print(col(f"  ⚠ не смог прочитать {p}: {e}", "yellow")); return False
+        note = ""
+        if len(data) > MAX_FILE:
+            data = data[:MAX_FILE]; note = " (обрезан)"
+        atts.append((os.path.basename(p), data, note)); seen.add(p)
+        return True
+
+    t = re.sub(r'@"([^"]+)"', lambda m: "" if add(m.group(1)) else m.group(0), text)
+    t = re.sub(r'@(\S+)', lambda m: "" if add(m.group(1)) else m.group(0), t)
+    clean = t.strip()
+    if not atts:  # вся строка целиком — путь к файлу?
+        whole = text.strip().strip('"')
+        if os.path.isfile(os.path.expanduser(whole)):
+            add(whole); clean = ""
+    return clean, atts
+
+
+def _build_prompt(raw: str):
+    """(итоговый промпт с приложенными файлами, что записать в память)."""
+    clean, atts = _expand_files(raw)
+    if not atts:
+        return raw, raw
+    print(col("  📎 приложены: " + ", ".join(n + note for n, _, note in atts), "dim"), file=sys.stderr)
+    blocks = "".join(f"\n\n=== файл {n} ===\n{c}" for n, c, _ in atts)
+    instr = clean or "Изучи приложенный файл и кратко объясни, что он делает; жди указаний."
+    mem_note = clean or ("[приложены файлы: " + ", ".join(n for n, _, _ in atts) + "]")
+    return instr + blocks, mem_note
+
+
 def cmd_code(a):
     _chat("code", _read_prompt(a.prompt, a.file, a.stdin),
           a.system or "Ты пишешь чистый production-код. Возвращай только запрошенное.", a.max_tokens)
@@ -813,7 +866,8 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/forget{C['off']}          очистить память этой сессии
     {C['cy']}/usage{C['off']}           расход и остаток квоты
     {C['cy']}/whoami{C['off']} {C['dim']}·{C['off']} {C['cy']}/login{C['off']} {C['dim']}·{C['off']} {C['cy']}/logout{C['off']} {C['dim']}·{C['off']} {C['cy']}/clear{C['off']} {C['dim']}·{C['off']} {C['cy']}/exit{C['off']}
-  {C['dim']}Без / — запрос уходит в текущем режиме. Память копится и сжимается сама.{C['off']}"""
+  {C['dim']}Без / — запрос в текущем режиме. Файл в контекст: {C['off']}{C['cy']}@путь/к/файлу{C['off']}{C['dim']} (или {C['off']}{C['cy']}@"путь с пробелами"{C['off']}{C['dim']}).{C['off']}
+  {C['dim']}Память копится и сжимается сама. Папки не сканируются — только явно указанные файлы.{C['off']}"""
 
 
 def _mk_getch():
@@ -1108,13 +1162,14 @@ def _repl() -> None:
 
 
 def _mem_turn(profile: str, prompt: str) -> None:
-    """Один ход диалога с памятью: подмешиваем контекст, сохраняем ответ."""
+    """Один ход диалога с памятью: подмешиваем контекст и файлы, сохраняем ответ."""
     m = mem_load()
     base = _CODE_SYS if profile == "code" else ""
     mx = 8000 if profile == "research" else 4000  # research/исследования не режем
-    text = _chat(profile, prompt, mem_system(base, m), mx)
+    full, mem_note = _build_prompt(prompt)
+    text = _chat(profile, full, mem_system(base, m), mx)
     if text:
-        mem_add(m, prompt, text)
+        mem_add(m, mem_note, text)
 
 
 def main():
@@ -1123,9 +1178,10 @@ def main():
     argv = sys.argv[1:]
     if not argv or argv[0] == "repl":
         return _repl()
-    if argv[0] not in known:  # `ape "напиши функцию…"` → сразу код на Qwen
-        return _chat("code", " ".join(argv),
-                     "Ты пишешь чистый production-код. Возвращай только запрошенное.", 2048)
+    if argv[0] not in known:  # `ape "напиши функцию…"` или `ape "@file.py объясни"` → код на Qwen
+        full, _ = _build_prompt(" ".join(argv))
+        return _chat("code", full,
+                     "Ты пишешь чистый production-код. Возвращай только запрошенное.", 4096)
     args = build_parser().parse_args(argv)
     args.func(args)
 
