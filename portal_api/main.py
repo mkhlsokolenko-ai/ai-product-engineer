@@ -277,8 +277,8 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status "
-            "FROM lectures ORDER BY position,week"
+            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status,code,seq "
+            "FROM lectures ORDER BY position,week,seq"
         )
         rows = await cur.fetchall()
         mrows = await (await c.execute(
@@ -288,24 +288,30 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     for mid, wk, title, url in mrows:
         mats.setdefault(wk, []).append({"id": mid, "title": title, "url": url})
     hw_weeks = {r[0] for r in arows}
+    # ДЗ/материалы — на ПОСЛЕДНЮЮ лекцию недели (чтобы не дублировать на 2–3 лекциях)
+    last_seq: dict[int, int] = {}
+    for r in rows:
+        last_seq[r[0]] = max(last_seq.get(r[0], 0), r[11] or 1)
     today = date.today()
     from portal_api.store import BLOCK_NAMES
     out = []
     for r in rows:
-        week = r[0]
+        week, seq = r[0], r[11] or 1
         eff = _effective_date(week, r[8], start)
+        is_last = seq == last_seq.get(week, 1)
         item = {
-            "week": week, "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
+            "code": r[10], "week": week, "seq": seq,
+            "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
             "title": r[2], "topic": r[3], "materials_url": r[4],
-            "materials": mats.get(week, []),
+            "materials": mats.get(week, []) if is_last else [],
             "outcomes": [x for x in (r[5] or "").split("|") if x],
             "skills": [x for x in (r[6] or "").split(",") if x],
             "practice": r[7] or "",
             "date": eff.isoformat(),
             "status": r[9] or "planned",
         }
-        if week in hw_weeks:
-            # дедлайн ДЗ — неделя от даты лекции; тикает от фактической даты
+        if is_last and week in hw_weeks:
+            # дедлайн ДЗ — неделя от даты последней лекции недели; тикает от фактической даты
             due = eff + timedelta(days=7)
             item["hw_due"] = due.isoformat()
             item["hw_days_left"] = (due - today).days
@@ -313,39 +319,38 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     return out
 
 
-@app.post("/api/lectures/{week}/pass")
-async def lecture_pass(week: int, body: LecturePassIn, claims: dict = Depends(require_staff)) -> dict:
+@app.post("/api/lectures/{code}/pass")
+async def lecture_pass(code: str, body: LecturePassIn, claims: dict = Depends(require_staff)) -> dict:
     """Отметить лекцию проведённой; опционально назначить дату следующей (с уведомлением)."""
     by = claims.get("preferred_username", "?")
-    _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         row = await (await c.execute(
-            "SELECT title,scheduled_at FROM lectures WHERE week=%s", (week,))).fetchone()
+            "SELECT title,scheduled_at,position FROM lectures WHERE code=%s", (code,))).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail=f"Лекции №{week} нет")
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
         # если дата не назначалась — фиксируем фактическую как сегодня
         await c.execute(
-            "UPDATE lectures SET status='passed', scheduled_at=COALESCE(scheduled_at,%s) WHERE week=%s",
-            (date.today(), week))
+            "UPDATE lectures SET status='passed', scheduled_at=COALESCE(scheduled_at,%s) WHERE code=%s",
+            (date.today(), code))
         nxt = await (await c.execute(
-            "SELECT week,title FROM lectures WHERE week>%s ORDER BY week LIMIT 1", (week,))).fetchone()
+            "SELECT code,title FROM lectures WHERE position>%s ORDER BY position LIMIT 1", (row[2],))).fetchone()
         tail = ""
-        payload = {"week": week, "action": "passed"}
+        payload = {"code": code, "action": "passed"}
         if body.next_date and nxt:
             try:
                 nd = date.fromisoformat(body.next_date[:10])
             except ValueError:
                 raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
-            await c.execute("UPDATE lectures SET scheduled_at=%s WHERE week=%s", (nd, nxt[0]))
+            await c.execute("UPDATE lectures SET scheduled_at=%s WHERE code=%s", (nd, nxt[0]))
             tail = f" Следующая лекция «{nxt[1]}» — {nd.strftime('%d.%m.%Y')}."
-            payload.update({"next_week": nxt[0], "next_date": nd.isoformat()})
-        await _notify(c, "lecture_passed", f"Лекция №{week} проведена",
+            payload.update({"next_code": nxt[0], "next_date": nd.isoformat()})
+        await _notify(c, "lecture_passed", f"Лекция проведена: {row[0]}",
                       f"«{row[0]}» отмечена как проведённая.{tail}", by, payload)
     return {"ok": True}
 
 
-@app.post("/api/lectures/{week}/schedule")
-async def lecture_schedule(week: int, body: LectureScheduleIn, claims: dict = Depends(require_staff)) -> dict:
+@app.post("/api/lectures/{code}/schedule")
+async def lecture_schedule(code: str, body: LectureScheduleIn, claims: dict = Depends(require_staff)) -> dict:
     """Назначить/перенести дату лекции — тикают дедлайны ДЗ, летит уведомление в бот."""
     by = claims.get("preferred_username", "?")
     try:
@@ -354,14 +359,14 @@ async def lecture_schedule(week: int, body: LectureScheduleIn, claims: dict = De
         raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
     async with db._conn() as c:  # noqa: SLF001
         row = await (await c.execute(
-            "SELECT title,scheduled_at FROM lectures WHERE week=%s", (week,))).fetchone()
+            "SELECT title,scheduled_at FROM lectures WHERE code=%s", (code,))).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail=f"Лекции №{week} нет")
-        await c.execute("UPDATE lectures SET scheduled_at=%s WHERE week=%s", (nd, week))
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
+        await c.execute("UPDATE lectures SET scheduled_at=%s WHERE code=%s", (nd, code))
         verb = "перенесена на" if row[1] else "назначена на"
-        await _notify(c, "lecture_scheduled", f"Лекция №{week}: новая дата",
+        await _notify(c, "lecture_scheduled", f"Новая дата: {row[0]}",
                       f"«{row[0]}» {verb} {nd.strftime('%d.%m.%Y')}.", by,
-                      {"week": week, "action": "scheduled", "date": nd.isoformat()})
+                      {"code": code, "action": "scheduled", "date": nd.isoformat()})
     return {"ok": True}
 
 
