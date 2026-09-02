@@ -356,7 +356,7 @@ async function vLectures(){
   view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
   const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
   const staff=ROLES.includes("lecturer")||ROLES.includes("admin");
-  const cw=d.week||0, done=ls.filter(x=>x.status==='passed'||(cw&&x.week<cw)).length, pct=ls.length?Math.round(100*done/ls.length):0;
+  const cw=d.week||0, done=ls.filter(x=>x.status==='passed').length, pct=ls.length?Math.round(100*done/ls.length):0;
   if(_lecOpen==null)_lecOpen=cw||1;
   const asW={};as.forEach(a=>{asW[a.week]=a;});
   const byBlock={};ls.forEach(l=>{(byBlock[l.block]=byBlock[l.block]||{name:l.block_name,items:[]}).items.push(l);});
@@ -421,7 +421,7 @@ async function vLectures(){
     blocks+=`</div>`;
   });
   $("lc").innerHTML=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-      <div><div class="t18">Пройдено <span class="mono">${done}/${ls.length}</span> лекций</div><div class="sub">${cw?("Идёт неделя "+cw+" из 15."):"Курс ещё не начался."}</div></div>
+      <div><div class="t18">Проведено <span class="mono">${done}/${ls.length}</span> лекций</div><div class="sub">${cw?("Идёт "+cw+"-я неделя курса."):"Курс ещё не начался."}${staff?" Прогресс идёт по кнопке «прошла».":""}</div></div>
       <div class="mono" style="font-size:23px;font-weight:700;color:var(--accent)">${pct}%</div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div></div>${blocks}`;
 }
