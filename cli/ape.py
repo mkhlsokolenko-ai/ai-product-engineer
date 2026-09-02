@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.14.0"
+APE_VERSION = "1.15.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -967,7 +967,8 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
     {C['cy']}/agents{C['off']} <цель>   несколько агентов ПАРАЛЛЕЛЬНО с tool-calling (Esc — стоп)
-    {C['cy']}/board{C['off']}           доска агентов · {C['cy']}post{C['off']} <текст> · {C['cy']}compact{C['off']} (свернуть) · {C['cy']}clear{C['off']}
+    {C['cy']}/board{C['off']}           доска агентов · {C['cy']}post{C['off']} <текст> · {C['cy']}compact{C['off']} · {C['cy']}clear{C['off']}
+    {C['cy']}/data{C['off']}            Data Plane: {C['cy']}recipes{C['off']} · {C['cy']}new{C['off']} <имя> · {C['cy']}run{C['off']} <имя> · {C['cy']}query{C['off']} <entity> [k=v]
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
@@ -1026,6 +1027,7 @@ _CMDS = [
     ("/mode", "режим по умолчанию (code|ask)"),
     ("/agents", "мульти-агенты параллельно с tool-calling"),
     ("/board", "общая доска агентов (Blackboard)"),
+    ("/data", "рецепты данных: источник→canonical JSON (Data Plane)"),
     ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
@@ -1311,6 +1313,42 @@ def _repl() -> None:
                     else:
                         board = bb_context()
                         print(board or col("  Доска пуста. Появится при /agents или /board post <заметка>.", "gray"))
+                elif cmd == "data":
+                    sp = rest.split()
+                    sub = sp[0] if sp else "recipes"
+                    if sub == "recipes":
+                        rs = data_recipes()
+                        print(col("  Рецепты данных: " + (", ".join(rs) if rs else "нет — /data new <имя>"), "cy"))
+                    elif sub == "new" and len(sp) > 1:
+                        tmpl = {"recipe": sp[1], "version": 1,
+                                "source": {"kind": "csv", "path": "путь/к/файлу.csv"},
+                                "entity": "transaction",
+                                "map": {"id": {"col": "order_id"}, "customer": {"col": "email"},
+                                        "amount": {"col": "total", "cast": "money"}, "date": {"col": "created_at"}},
+                                "rules": [{"assert": "amount > 0"}, {"pii_mask": ["customer"]}],
+                                "emit": {"schema": "transaction", "schema_version": "1.0", "ttl_sec": 86400}}
+                        fp = os.path.join(_recipes_dir(), sp[1] + ".json")
+                        with open(fp, "w", encoding="utf-8") as f:
+                            json.dump(tmpl, f, ensure_ascii=False, indent=2)
+                        print(col(f"  Шаблон рецепта создан: {fp}\n  Отредактируй source/map/rules и: /data run {sp[1]}", "cy"))
+                    elif sub == "run" and len(sp) > 1:
+                        try:
+                            ent, n, dr = data_run(sp[1])
+                            print(col(f"  Рецепт «{sp[1]}» → {n} записей в «{ent}» (отброшено {dr}). "
+                                      f"Проверить: /data query {ent}", "cy"))
+                        except Exception as e:  # noqa: BLE001
+                            print(col(f"  Ошибка рецепта: {e}", "yellow"))
+                    elif sub == "query" and len(sp) > 1:
+                        flt = {}
+                        for kv in sp[2:]:
+                            if "=" in kv:
+                                k, v = kv.split("=", 1); flt[k] = v
+                        recs = data_query(sp[1], flt or None)
+                        print(col(f"  {len(recs)} записей в «{sp[1]}»:", "dim"))
+                        for r in recs[:10]:
+                            print("  " + json.dumps({k: v for k, v in r.items() if k != "provenance"}, ensure_ascii=False)[:200])
+                    else:
+                        print(col("  /data recipes · /data new <имя> · /data run <имя> · /data query <entity> [k=v]", "gray"))
                 elif cmd == "rag":
                     sp = rest.split(maxsplit=1)
                     if sp and sp[0] == "search" and len(sp) > 1:
@@ -1465,6 +1503,141 @@ def bb_compact() -> int:
     return n
 
 
+# ═══════════════ DATA PLANE — декларативные рецепты данных (источник → canonical JSON) ═══════════════
+# Data Recipe пишет ЧЕЛОВЕК (no-code JSON): source → map → rules → emit. Движок применяет и кладёт
+# канонические записи в append-only store (dedup по id на чтении). Агент читает через data_query.
+
+def _recipes_dir() -> str:
+    d = os.path.join(CFG_DIR, "recipes"); os.makedirs(d, exist_ok=True); return d
+
+
+def _data_path(entity: str) -> str:
+    d = os.path.join(CFG_DIR, "data"); os.makedirs(d, exist_ok=True)
+    safe = re.sub(r"[^a-z0-9_]", "_", entity.lower())
+    return os.path.join(d, f"{safe}.jsonl")
+
+
+def data_recipes() -> list:
+    return sorted(f[:-5] for f in os.listdir(_recipes_dir()) if f.endswith(".json"))
+
+
+def data_load_recipe(name: str) -> dict:
+    with open(os.path.join(_recipes_dir(), name + ".json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _cast(v, t):
+    s = v.strip() if isinstance(v, str) else v
+    if t == "money":
+        n = re.sub(r"[^\d.,-]", "", str(s)).replace(" ", "").replace(",", ".")
+        try:
+            return float(n)
+        except Exception:
+            return None
+    if t == "int":
+        try:
+            return int(float(str(s)))
+        except Exception:
+            return None
+    if t == "lower":
+        return str(s).lower()
+    return s  # str/date — passthrough (MVP)
+
+
+def _map_field(spec, row):
+    if isinstance(spec, str):
+        return row.get(spec, "")
+    if "const" in spec:
+        return spec["const"]
+    val = row.get(spec.get("col", ""), "")
+    return _cast(val, spec["cast"]) if spec.get("cast") else val
+
+
+def _rule_ok(expr: str, rec: dict) -> bool:
+    m = re.match(r"\s*([\w.]+)\s*(>=|<=|==|!=|>|<)\s*(.+?)\s*$", expr)
+    if not m:
+        return True
+    field, op, rhs = m.groups()
+    left = rec.get(field)
+    try:
+        rv = float(rhs); lv = float(left)
+    except Exception:
+        rv = rhs.strip().strip('"\''); lv = str(left)
+    import operator as _op
+    fn = {">": _op.gt, "<": _op.lt, ">=": _op.ge, "<=": _op.le,
+          "==": _op.eq, "!=": _op.ne}[op]
+    try:
+        return fn(lv, rv)
+    except Exception:
+        return True
+
+
+def _mask(v):
+    s = str(v)
+    if "@" in s:
+        a, _, b = s.partition("@"); return (a[:2] + "***@" + b)
+    return s[:2] + "***" if len(s) > 2 else "***"
+
+
+def data_run(name: str) -> tuple:
+    """Применяет рецепт: читает источник, маппит, валидирует, пишет canonical в store."""
+    r = data_load_recipe(name)
+    src = r.get("source", {}); entity = r["entity"]; emit = r.get("emit", {})
+    rows = []
+    if src.get("kind") == "csv":
+        import csv
+        p = os.path.expanduser(src["path"])
+        with open(p, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+    elif src.get("kind") == "json":
+        with open(os.path.expanduser(src["path"]), encoding="utf-8") as f:
+            data = json.load(f); rows = data if isinstance(data, list) else data.get(src.get("root", "items"), [])
+    else:
+        raise ValueError(f"источник {src.get('kind')} не поддержан (MVP: csv|json)")
+    mp = r.get("map", {}); rules = r.get("rules", [])
+    out = []; dropped = 0
+    for i, row in enumerate(rows):
+        rec = {k: _map_field(spec, row) for k, spec in mp.items()}
+        ok = True
+        for rule in rules:
+            if "assert" in rule and not _rule_ok(rule["assert"], rec):
+                ok = False; break
+            if "pii_mask" in rule:
+                for fld in rule["pii_mask"]:
+                    if fld in rec:
+                        rec[fld] = _mask(rec[fld])
+        if not ok:
+            dropped += 1; continue
+        rec.update({"schema": emit.get("schema", entity),
+                    "schema_version": emit.get("schema_version", "1.0"),
+                    "provenance": {"recipe": name, "source": f"{src.get('kind')}:{src.get('path', src.get('ref',''))}",
+                                   "row": i, "fetched_at": time.time()},
+                    "ttl_sec": emit.get("ttl_sec", 86400)})
+        out.append(rec)
+    with open(_data_path(entity), "a", encoding="utf-8") as f:  # append-only canonical store
+        for rec in out:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return entity, len(out), dropped
+
+
+def data_query(entity: str, filters: dict = None, fields: list = None, limit: int = 50) -> list:
+    """Чтение canonical store: dedup по id (последний), фильтр по точному совпадению, проекция."""
+    try:
+        with open(_data_path(entity), encoding="utf-8") as f:
+            recs = [json.loads(x) for x in f if x.strip()]
+    except FileNotFoundError:
+        return []
+    seen = {}
+    for r in recs:
+        seen[r.get("id", id(r))] = r          # dedup: последняя запись по id
+    res = list(seen.values())
+    for k, v in (filters or {}).items():
+        res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
+    if fields:
+        res = [{k: r.get(k) for k in fields} for r in res]
+    return res[:limit]
+
+
 def _t_rag(a):
     r = _mcp_call("rag_search", {"query": a.get("query", ""), "session_id": _session_id(), "top_k": 5})
     hits = r.get("results", r.get("hits", []))
@@ -1529,6 +1702,11 @@ AGENT_TOOLS = {
     "bb_post": (_t_bb_post, 'оставить на доске факт или заметку — args: {"key":"...","value":"..."} или {"note":"..."}'),
     "bb_read": (_t_bb_read, 'прочитать общую доску (факты, взятые задачи, заметки) — args: {}'),
     "bb_claim": (_t_bb_claim, 'застолбить подзадачу, чтобы её не делал другой — args: {"task":"..."}'),
+    "data_query": (lambda a: json.dumps(
+        data_query(a.get("entity", ""), a.get("filter") if isinstance(a.get("filter"), dict) else None,
+                   a.get("fields") if isinstance(a.get("fields"), list) else None,
+                   int(a.get("limit", 30))), ensure_ascii=False)[:4000] or "[]",
+        'взять машиночитаемые данные из Data Plane — args: {"entity":"...","filter":{...},"fields":[...]}'),
 }
 
 _AGENT_SYS = (
