@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.12.0"
+APE_VERSION = "1.13.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -1543,9 +1543,23 @@ def _json_list(text: str):
     return []
 
 
-def _agent_run(idx: int, task: str, state: list, profile: str = "research"):
+def _json_waves(text: str):
+    """Парсит план из волн: [[задачи волны1],[задачи волны2],...] или плоский список → 1 волна."""
+    a = text.find("["); b = text.rfind("]")
+    if a == -1 or b <= a:
+        return []
+    try:
+        data = json.loads(text[a:b + 1])
+    except Exception:
+        return []
+    if data and isinstance(data[0], list):
+        return [[str(x) for x in w if str(x).strip()] for w in data if w]
+    return [[str(x) for x in data if str(x).strip()]]
+
+
+def _agent_run(idx: int, task: str, state: list, profile: str = "research", label: str = ""):
     """ReAct-цикл одного агента с доступом к Blackboard. Пишет статус в state[idx]."""
-    me = f"аг.{idx + 1}"
+    me = label or f"аг.{idx + 1}"
     board = bb_context()
     ctx = (f"\n\nОБЩАЯ ДОСКА (крошки от других/прошлых агентов — используй и дополняй "
            f"через bb_post/bb_read):\n{board}") if board else ""
@@ -1598,31 +1612,15 @@ def _agents_render(state, tick, first=False):
     sys.stdout.flush()
 
 
-def cmd_agents(goal: str) -> None:
-    if not goal.strip():
-        print(col("  Пример: /agents собери сравнение 3 векторных БД для RAG с плюсами и минусами", "gray")); return
-    _STOP.clear()
-    print(col("  ⟳ планирую подзадачи…", "dim"), file=sys.stderr)
-    try:
-        pr = _mcp_call("chat", {"prompt": f"Разбей цель на 2–{AGENT_MAX} НЕЗАВИСИМЫХ подзадач для "
-                                f"параллельных агентов. Верни ТОЛЬКО JSON-массив строк.\n\nЦель: {goal}",
-                                "session_id": _session_id(), "profile": "research", "system": "",
-                                "max_tokens": 500})
-        subs = _json_list(pr.get("text", ""))[:AGENT_MAX]
-    except BaseException:  # noqa: BLE001
-        subs = []
-    if not subs:
-        subs = [goal]
-    bb_append({"type": "note", "text": f"ЦЕЛЬ: {goal}", "agent": "оркестратор"})
-    print(col(f"  🧠 {len(subs)} агент(а) параллельно · инструменты: {', '.join(AGENT_TOOLS)}", "dim"))
-    print(col("  🗒 общая доска (Blackboard) активна — /board чтобы посмотреть", "dim"))
-    state = [{"i": i + 1, "task": s, "step": 0, "status": "ожидает"} for i, s in enumerate(subs)]
-    results = [None] * len(subs)
+def _run_wave(wi: int, tasks: list) -> list:
+    """Запускает одну волну: агенты параллельно, барьер в конце. Возвращает результаты."""
+    state = [{"i": i + 1, "task": t, "step": 0, "status": "ожидает"} for i, t in enumerate(tasks)]
+    results = [None] * len(tasks)
 
     def run(i):
-        results[i] = _agent_run(i, subs[i], state)
+        results[i] = _agent_run(i, tasks[i], state, label=f"в{wi}.{i + 1}")
 
-    ths = [threading.Thread(target=run, args=(i,), daemon=True) for i in range(len(subs))]
+    ths = [threading.Thread(target=run, args=(i,), daemon=True) for i in range(len(tasks))]
     _agents_render(state, 0, first=True)
     for t in ths:
         t.start()
@@ -1630,19 +1628,54 @@ def cmd_agents(goal: str) -> None:
     while any(t.is_alive() for t in ths):
         if _poll_esc():
             _STOP.set()
-            print(col("  ⏹ останавливаю агентов…", "yellow"))
-            break
+            print(col("  ⏹ останавливаю агентов…", "yellow")); break
         tick += 1; _agents_render(state, tick); time.sleep(0.12)
     for t in ths:
         t.join(timeout=0.1)
     _agents_render(state, tick)
+    return results
+
+
+def cmd_agents(goal: str) -> None:
+    if not goal.strip():
+        print(col("  Пример: /agents по @файлу подготовь данные для DCF: рынок, риски, экономика", "gray")); return
+    _STOP.clear()
+    print(col("  ⟳ планирую волны…", "dim"), file=sys.stderr)
+    try:
+        pr = _mcp_call("chat", {
+            "prompt": f"Составь план из 1–3 ВОЛН для параллельных агентов. Волна = список независимых "
+            f"задач (выполняются параллельно); СЛЕДУЮЩАЯ волна видит результаты предыдущей на общей "
+            f"доске. Типично: волна 1 — сбор/извлечение фактов (каждая задача пишет на доску через "
+            f"bb_post), волна 2 — анализ/сравнение на основе доски (bb_read), опц. волна 3 — проверка. "
+            f"Всего не более {AGENT_MAX} задач в волне. Верни ТОЛЬКО JSON: массив волн, каждая — "
+            f"массив строк-задач.\n\nЦель: {goal}",
+            "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 700})
+        waves = _json_waves(pr.get("text", ""))
+    except BaseException:  # noqa: BLE001
+        waves = []
+    waves = [w[:AGENT_MAX] for w in waves if w][:3] or [[goal]]
+    bb_append({"type": "note", "text": f"ЦЕЛЬ: {goal}", "agent": "оркестратор"})
+    print(col(f"  🧠 план: {len(waves)} волн(ы) · доска Blackboard активна (/board) · Esc — стоп", "dim"))
+    all_res = []
+    for wi, wave in enumerate(waves, 1):
+        if _STOP.is_set():
+            break
+        tag = "сбор фактов" if wi == 1 and len(waves) > 1 else "анализ/сборка" if wi == len(waves) and len(waves) > 1 else "работа"
+        print(col(f"  ── Волна {wi}/{len(waves)} · {tag} · {len(wave)} агент(а) ──", "cy"))
+        res = _run_wave(wi, wave)
+        all_res.append((wave, res))
+        if wi < len(waves):
+            print(col("  ↧ доска обновлена, следующая волна её увидит", "dim"), file=sys.stderr)
     if _STOP.is_set():
         return
-    print(col("  ⟳ синтезирую итог…", "dim"), file=sys.stderr)
-    joined = "\n\n".join(f"### Подзадача {i+1}: {subs[i]}\n{results[i] or '(нет результата)'}"
-                         for i in range(len(subs)))
-    syn = _chat("research", f"Собери из результатов подзадач единый связный итог по цели «{goal}». "
-                f"Без повторов, структурно.\n\n{joined}", "", 8000)
+    print(col("  ⟳ синтезирую итог из доски и результатов волн…", "dim"), file=sys.stderr)
+    joined = "\n\n".join(
+        f"### Волна {wi}, задача {i+1}: {w[i]}\n{r[i] or '(нет результата)'}"
+        for wi, (w, r) in enumerate(all_res, 1) for i in range(len(w)))
+    board = bb_context()
+    _chat("research", f"Собери единый связный итог по цели «{goal}». Опирайся на факты с доски и "
+          f"результаты волн, без повторов, структурно.\n\n[ДОСКА]\n{board}\n\n[РЕЗУЛЬТАТЫ]\n{joined}",
+          "", 8000)
 
 
 def _poll_esc() -> bool:
