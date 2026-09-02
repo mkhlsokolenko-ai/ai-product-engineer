@@ -22,12 +22,14 @@ import http.server
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import ssl
 import sys
 import threading
 import time
+from datetime import datetime
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -561,6 +563,80 @@ def _print_answer(text: str, truncated: bool = False, collapse: bool = True) -> 
                   "yellow"))
 
 
+# ─────────────────────── Сохранение ответа (локально / в проект студента) ───────────────────────
+
+_CODE_EXTS = (".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".cpp", ".c", ".rb",
+              ".sh", ".sql", ".json", ".yaml", ".yml", ".html", ".css", ".ipynb")
+
+
+def _extract_code(text: str) -> str | None:
+    """Первый код-блок из markdown (без ``` рамки) — чтобы .py-файл был запускаемым."""
+    m = re.search(r"```[^\n]*\n(.*?)```", text, re.S)
+    return m.group(1).rstrip("\n") if m else None
+
+
+def _default_name(ext: str = ".md") -> str:
+    return "ape-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ext
+
+
+def _payload_for(name: str) -> str:
+    """Для кодовых расширений сохраняем сам код (без markdown-обвязки), иначе — весь ответ."""
+    if name.lower().endswith(_CODE_EXTS):
+        code = _extract_code(LAST_ANSWER)
+        if code:
+            return code
+    return LAST_ANSWER
+
+
+def _save_local(path: str, content: str) -> str:
+    path = os.path.expanduser(path)
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return os.path.abspath(path)
+
+
+def _upload_cloud(filename: str, content: bytes) -> dict:
+    """Загрузка в хранилище проекта студента через portal-api (тот же JWT)."""
+    tok = token()
+    boundary = "----ape" + secrets.token_hex(8)
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n"
+    ).encode() + content + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        PORTAL + "/api/storage/upload", data=body,
+        headers={"Authorization": "Bearer " + tok,
+                 "Content-Type": "multipart/form-data; boundary=" + boundary})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.load(r)
+
+
+def do_save(rest: str) -> None:
+    if not LAST_ANSWER:
+        print(col("  Нечего сохранять — сначала задай вопрос.", "gray")); return
+    sp = rest.split(maxsplit=1)
+    if sp and sp[0] == "cloud":                       # /save cloud [имя]
+        name = (sp[1].strip() if len(sp) > 1 else _default_name())
+        content = _payload_for(name)
+        try:
+            _upload_cloud(name, content.encode("utf-8"))
+            print(col(f"  ☁ загружено в проект: {name} — открой портал → «Мой проект»", "cy"))
+        except Exception as e:  # noqa: BLE001
+            print(col(f"  Не удалось загрузить в облако: {e}", "yellow"))
+    else:                                             # /save [путь/имя]
+        name = rest.strip() or _default_name()
+        content = _payload_for(name)
+        try:
+            p = _save_local(name, content)
+            print(col(f"  💾 сохранено: {p} ({len(content)} символов)", "cy"))
+        except Exception as e:  # noqa: BLE001
+            print(col(f"  Не удалось сохранить: {e}", "yellow"))
+
+
 def cmd_code(a):
     _chat("code", _read_prompt(a.prompt, a.file, a.stdin),
           a.system or "Ты пишешь чистый production-код. Возвращай только запрошенное.", a.max_tokens)
@@ -730,7 +806,9 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
-    {C['cy']}/more{C['off']}            раскрыть последний ответ · {C['cy']}/save{C['off']} <файл> — сохранить
+    {C['cy']}/more{C['off']}            раскрыть последний ответ полностью
+    {C['cy']}/save{C['off']} <файл>     сохранить на компьютер (.md/.py/… — код запишется без обвязки)
+    {C['cy']}/save cloud{C['off']} <имя> загрузить в свой проект (портал → «Мой проект»)
     {C['cy']}/memory{C['off']}          показать, что агент помнит
     {C['cy']}/forget{C['off']}          очистить память этой сессии
     {C['cy']}/usage{C['off']}           расход и остаток квоты
@@ -783,7 +861,7 @@ _CMDS = [
     ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
-    ("/save", "сохранить последний ответ в файл"),
+    ("/save", "сохранить: /save <файл> (на комп) · /save cloud <имя> (в проект)"),
     ("/memory", "что агент помнит"),
     ("/forget", "очистить память сессии"),
     ("/usage", "расход и остаток квоты"),
@@ -1007,16 +1085,7 @@ def _repl() -> None:
                     else:
                         print(col("  Нечего раскрывать — сначала задай вопрос.", "gray"))
                 elif cmd == "save":
-                    if not LAST_ANSWER:
-                        print(col("  Нечего сохранять.", "gray"))
-                    else:
-                        fn = rest.strip() or "answer.md"
-                        try:
-                            with open(fn, "w", encoding="utf-8") as f:
-                                f.write(LAST_ANSWER)
-                            print(col(f"  Сохранено в {fn} ({len(LAST_ANSWER)} символов)", "cy"))
-                        except Exception as e:  # noqa: BLE001
-                            print(col(f"  Не удалось сохранить: {e}", "yellow"))
+                    do_save(rest)
                 elif cmd == "usage":
                     cmd_usage(None)
                 elif cmd == "whoami":
