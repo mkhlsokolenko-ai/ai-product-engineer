@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.13.0"
+APE_VERSION = "1.14.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -967,7 +967,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
     {C['cy']}/agents{C['off']} <цель>   несколько агентов ПАРАЛЛЕЛЬНО с tool-calling (Esc — стоп)
-    {C['cy']}/board{C['off']}           общая доска агентов · {C['cy']}/board post <текст>{C['off']} · {C['cy']}/board clear{C['off']}
+    {C['cy']}/board{C['off']}           доска агентов · {C['cy']}post{C['off']} <текст> · {C['cy']}compact{C['off']} (свернуть) · {C['cy']}clear{C['off']}
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
@@ -1302,6 +1302,9 @@ def _repl() -> None:
                         except FileNotFoundError:
                             pass
                         print(col("  Доска очищена (лог событий удалён).", "cy"))
+                    elif sp and sp[0] == "compact":
+                        n = bb_compact()
+                        print(col(f"  Свёрнуто {n} событий в снапшот (состояние сохранено).", "cy"))
                     elif sp and sp[0] == "post" and len(sp) > 1:
                         bb_append({"type": "note", "text": sp[1], "agent": "ты"})
                         print(col("  Крошка добавлена на доску.", "cy"))
@@ -1416,30 +1419,50 @@ def bb_events() -> list:
 
 
 def bb_state():
-    """Свёртка событий → (facts: key→{value,by}, notes: [крошки]). Чистка не нужна — это лог."""
-    facts = {}; notes = []
+    """Свёртка событий → (facts, notes, claims). Snapshot = база, дальше применяются события."""
+    facts = {}; notes = []; claims = {}
     for e in bb_events():
         t = e.get("type")
-        if t == "set" and e.get("key"):
+        if t == "snapshot":                                  # компакция: сброс к снимку
+            facts = dict(e.get("facts", {})); notes = list(e.get("notes", []))
+            claims = dict(e.get("claims", {}))
+        elif t == "set" and e.get("key"):
             facts[e["key"]] = {"value": e.get("value", ""), "by": e.get("agent", "?")}
         elif t == "note":
             notes.append(e)
-    return facts, notes
+        elif t == "claim" and e.get("task"):
+            claims.setdefault(e["task"], e.get("agent", "?"))
+    return facts, notes, claims
 
 
 def bb_context(limit_notes: int = 12) -> str:
     """Компактный снимок доски для инъекции в агента."""
-    facts, notes = bb_state()
-    if not facts and not notes:
+    facts, notes, claims = bb_state()
+    if not facts and not notes and not claims:
         return ""
     out = []
     if facts:
         out.append("Факты на доске:")
         out += [f"  {k} = {v['value']}  (от {v['by']})" for k, v in facts.items()]
+    if claims:
+        out.append("Взятые задачи (не дублируй — займись другим):")
+        out += [f"  «{k}» → {v}" for k, v in claims.items()]
     if notes:
         out.append("Крошки (заметки агентов):")
         out += [f"  [{n.get('agent','?')}] {n.get('text','')[:200]}" for n in notes[-limit_notes:]]
     return "\n".join(out)
+
+
+def bb_compact() -> int:
+    """Сворачивает лог в один snapshot (состояние сохраняется, история обрезается)."""
+    facts, notes, claims = bb_state()
+    n = len(bb_events())
+    snap = {"ts": time.time(), "type": "snapshot", "facts": facts,
+            "notes": notes[-20:], "claims": claims}
+    with _BB_LOCK:
+        with open(_bb_path(), "w", encoding="utf-8") as f:
+            f.write(json.dumps(snap, ensure_ascii=False) + "\n")
+    return n
 
 
 def _t_rag(a):
@@ -1487,14 +1510,25 @@ def _t_bb_read(a):
     return bb_context() or "доска пуста"
 
 
+def _t_bb_claim(a):
+    task = str(a.get("task", "")).strip()
+    if not task:
+        return "укажи task"
+    _, _, claims = bb_state()
+    if task in claims and claims[task] != a.get("_agent"):
+        return f"уже взято агентом {claims[task]} — займись другим"
+    bb_append({"type": "claim", "task": task, "agent": a.get("_agent", "агент")})
+    return f"задача «{task}» закреплена за тобой"
+
+
 AGENT_TOOLS = {
     "rag_search": (_t_rag, 'поиск по своей RAG-коллекции — args: {"query": "..."}'),
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
     "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
     "ask": (_t_ask, 'спросить исследовательскую модель — args: {"query": "..."}'),
-    "bb_post": (_t_bb_post, 'оставить на доске факт или заметку для других агентов — '
-                            'args: {"key":"...","value":"..."} или {"note":"..."}'),
-    "bb_read": (_t_bb_read, 'прочитать общую доску (факты и заметки агентов) — args: {}'),
+    "bb_post": (_t_bb_post, 'оставить на доске факт или заметку — args: {"key":"...","value":"..."} или {"note":"..."}'),
+    "bb_read": (_t_bb_read, 'прочитать общую доску (факты, взятые задачи, заметки) — args: {}'),
+    "bb_claim": (_t_bb_claim, 'застолбить подзадачу, чтобы её не делал другой — args: {"task":"..."}'),
 }
 
 _AGENT_SYS = (
@@ -1676,6 +1710,8 @@ def cmd_agents(goal: str) -> None:
     _chat("research", f"Собери единый связный итог по цели «{goal}». Опирайся на факты с доски и "
           f"результаты волн, без повторов, структурно.\n\n[ДОСКА]\n{board}\n\n[РЕЗУЛЬТАТЫ]\n{joined}",
           "", 8000)
+    if len(bb_events()) > 150:                              # доска разрослась — свернём в снапшот
+        bb_compact()
 
 
 def _poll_esc() -> bool:
