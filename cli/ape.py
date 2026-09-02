@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.10.0"
+APE_VERSION = "1.11.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -966,6 +966,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/code{C['off']} <текст>    код на Qwen3.8-27B
     {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
+    {C['cy']}/agents{C['off']} <цель>   несколько агентов ПАРАЛЛЕЛЬНО с tool-calling (Esc — стоп)
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
@@ -1022,6 +1023,7 @@ _CMDS = [
     ("/code", "код на Qwen3.8-27B"),
     ("/ask", "ресёрч / рассуждения на DeepSeek"),
     ("/mode", "режим по умолчанию (code|ask)"),
+    ("/agents", "мульти-агенты параллельно с tool-calling"),
     ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
@@ -1288,6 +1290,8 @@ def _repl() -> None:
                         _mem_turn(prof, rest)
                     else:
                         mode = cmd; print(col(f"  режим по умолчанию: {mode}", "dim"))
+                elif cmd in ("agents", "team"):
+                    cmd_agents(rest)
                 elif cmd == "rag":
                     sp = rest.split(maxsplit=1)
                     if sp and sp[0] == "search" and len(sp) > 1:
@@ -1362,6 +1366,208 @@ def _mem_turn(profile: str, prompt: str) -> None:
     text = _chat(profile, full, mem_system(base, m), mx)
     if text:
         mem_add(m, mem_note, text)
+
+
+# ═══════════════ Мульти-агентная оркестрация (параллельно + tool-calling) ═══════════════
+
+AGENT_MAX = 4      # сколько агентов максимум параллельно
+STEP_MAX = 5       # шагов ReAct на агента
+_STOP = threading.Event()
+
+
+def _t_rag(a):
+    r = _mcp_call("rag_search", {"query": a.get("query", ""), "session_id": _session_id(), "top_k": 5})
+    hits = r.get("results", r.get("hits", []))
+    return "\n".join((h.get("text") or h.get("document") or "")[:400] for h in hits[:5]) or "ничего не найдено"
+
+
+def _t_read(a):
+    p = os.path.expanduser(str(a.get("path", "")).strip().strip('"'))
+    if not os.path.isfile(p):
+        return f"нет файла: {p}"
+    with open(p, encoding="utf-8", errors="replace") as f:
+        return f.read(8000)
+
+
+def _t_write(a):
+    os.makedirs("ape_work", exist_ok=True)
+    name = os.path.basename(str(a.get("path", "out.txt"))) or "out.txt"
+    fp = os.path.join("ape_work", name)
+    with open(fp, "w", encoding="utf-8") as f:
+        f.write(str(a.get("content", "")))
+    return f"записано: {fp}"
+
+
+def _t_ask(a):
+    r = _mcp_call("chat", {"prompt": a.get("query", ""), "session_id": _session_id(),
+                           "profile": "research", "system": "", "max_tokens": 1500})
+    return (r.get("text") or "")[:1500]
+
+
+AGENT_TOOLS = {
+    "rag_search": (_t_rag, 'поиск по своей RAG-коллекции — args: {"query": "..."}'),
+    "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
+    "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
+    "ask": (_t_ask, 'спросить исследовательскую модель — args: {"query": "..."}'),
+}
+
+_AGENT_SYS = (
+    "Ты автономный агент и решаешь задачу пошагово с помощью ИНСТРУМЕНТОВ. "
+    "На КАЖДОМ шаге верни РОВНО ОДИН JSON-объект и НИЧЕГО больше:\n"
+    '  вызвать инструмент: {"tool":"<имя>","args":{...}}\n'
+    '  завершить:          {"final":"<итоговый ответ>"}\n'
+    "Доступные инструменты:\n"
+    + "\n".join(f"  - {n}: {d}" for n, (_, d) in AGENT_TOOLS.items())
+    + "\nЕсли данных достаточно — сразу возвращай final. Не выдумывай инструменты."
+)
+
+
+def _json_first(text: str):
+    """Достаёт первый сбалансированный JSON-объект из текста (модель может обернуть в ```)."""
+    s = text.find("{")
+    while s != -1:
+        depth = 0; instr = False; esc = False
+        for i in range(s, len(text)):
+            c = text[i]
+            if instr:
+                if esc: esc = False
+                elif c == "\\": esc = True
+                elif c == '"': instr = False
+            else:
+                if c == '"': instr = True
+                elif c == "{": depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[s:i + 1])
+                        except Exception:
+                            break
+        s = text.find("{", s + 1)
+    return None
+
+
+def _json_list(text: str):
+    a = text.find("["); b = text.rfind("]")
+    if a != -1 and b > a:
+        try:
+            return [str(x) for x in json.loads(text[a:b + 1])]
+        except Exception:
+            pass
+    return []
+
+
+def _agent_run(idx: int, task: str, state: list, profile: str = "research"):
+    """ReAct-цикл одного агента. Пишет статус в state[idx], возвращает результат."""
+    trans = ""
+    for step in range(STEP_MAX):
+        if _STOP.is_set():
+            state[idx]["status"] = "⏹ отменён"; return None
+        state[idx].update(step=step + 1, status="думает")
+        prompt = (f"Задача: {task}\n\nЖурнал шагов:\n{trans or '(пусто)'}\n\n"
+                  "Следующее действие — только JSON:")
+        try:
+            r = _mcp_call("chat", {"prompt": prompt, "session_id": _session_id(),
+                                   "profile": profile, "system": _AGENT_SYS, "max_tokens": 1500})
+        except BaseException:  # noqa: BLE001
+            state[idx]["status"] = "ошибка сети"; return None
+        txt = r.get("text", "")
+        act = _json_first(txt)
+        if not act or "final" in (act or {}):
+            state[idx].update(status="готов ✓")
+            return (act or {}).get("final", txt) if act else txt
+        tool = act.get("tool"); args = act.get("args", {}) if isinstance(act.get("args"), dict) else {}
+        if tool in AGENT_TOOLS:
+            state[idx].update(status=f"🔧 {tool}")
+            try:
+                obs = AGENT_TOOLS[tool][0](args)
+            except Exception as e:  # noqa: BLE001
+                obs = f"ошибка инструмента: {e}"
+        else:
+            obs = f"нет такого инструмента: {tool}"
+        trans += f"\nДействие: {json.dumps(act, ensure_ascii=False)}\nНаблюдение: {str(obs)[:800]}\n"
+    state[idx].update(status="лимит шагов")
+    return trans[-1500:]
+
+
+def _agents_render(state, tick, first=False):
+    w = _term_w() - 2
+    if not first:
+        sys.stdout.write(f"\033[{len(state)}A")
+    fr = _SPIN[tick % len(_SPIN)]
+    for s in state:
+        done = s["status"].startswith(("готов", "⏹", "ошибка", "лимит"))
+        mk = ("✓" if s["status"].startswith("готов") else "•") if done else fr
+        gr = "" if not _ANSI else (C["green"] if s["status"].startswith("готов") else
+                                   C["yellow"] if done else SPIN_RAMP[tick % len(SPIN_RAMP)])
+        line = f"  {gr}{mk}{C['off']} {C['dim']}[аг.{s['i']}]{C['off']} {s['task'][:w-40]}  {C['cy']}{s['status']}{C['off']}"
+        sys.stdout.write("\r\033[K" + line[:w + 12] + "\n")
+    sys.stdout.flush()
+
+
+def cmd_agents(goal: str) -> None:
+    if not goal.strip():
+        print(col("  Пример: /agents собери сравнение 3 векторных БД для RAG с плюсами и минусами", "gray")); return
+    _STOP.clear()
+    print(col("  ⟳ планирую подзадачи…", "dim"), file=sys.stderr)
+    try:
+        pr = _mcp_call("chat", {"prompt": f"Разбей цель на 2–{AGENT_MAX} НЕЗАВИСИМЫХ подзадач для "
+                                f"параллельных агентов. Верни ТОЛЬКО JSON-массив строк.\n\nЦель: {goal}",
+                                "session_id": _session_id(), "profile": "research", "system": "",
+                                "max_tokens": 500})
+        subs = _json_list(pr.get("text", ""))[:AGENT_MAX]
+    except BaseException:  # noqa: BLE001
+        subs = []
+    if not subs:
+        subs = [goal]
+    print(col(f"  🧠 {len(subs)} агент(а) параллельно, инструменты: {', '.join(AGENT_TOOLS)}", "dim"))
+    state = [{"i": i + 1, "task": s, "step": 0, "status": "ожидает"} for i, s in enumerate(subs)]
+    results = [None] * len(subs)
+
+    def run(i):
+        results[i] = _agent_run(i, subs[i], state)
+
+    ths = [threading.Thread(target=run, args=(i,), daemon=True) for i in range(len(subs))]
+    _agents_render(state, 0, first=True)
+    for t in ths:
+        t.start()
+    tick = 0
+    while any(t.is_alive() for t in ths):
+        if _poll_esc():
+            _STOP.set()
+            print(col("  ⏹ останавливаю агентов…", "yellow"))
+            break
+        tick += 1; _agents_render(state, tick); time.sleep(0.12)
+    for t in ths:
+        t.join(timeout=0.1)
+    _agents_render(state, tick)
+    if _STOP.is_set():
+        return
+    print(col("  ⟳ синтезирую итог…", "dim"), file=sys.stderr)
+    joined = "\n\n".join(f"### Подзадача {i+1}: {subs[i]}\n{results[i] or '(нет результата)'}"
+                         for i in range(len(subs)))
+    syn = _chat("research", f"Собери из результатов подзадач единый связный итог по цели «{goal}». "
+                f"Без повторов, структурно.\n\n{joined}", "", 8000)
+
+
+def _poll_esc() -> bool:
+    """Неблокирующая проверка Esc/Ctrl+C (для оркестратора агентов)."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            while msvcrt.kbhit():
+                c = msvcrt.getwch()
+                if c in ("\x00", "\xe0"):
+                    msvcrt.getwch(); continue
+                if c in ("\x1b", "\x03"):
+                    return True
+        elif sys.stdin.isatty():
+            import select
+            if select.select([sys.stdin], [], [], 0)[0]:
+                return sys.stdin.read(1) in ("\x1b", "\x03")
+    except Exception:
+        return False
+    return False
 
 
 def main():
