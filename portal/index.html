@@ -355,7 +355,8 @@ let _lecOpen=null;
 async function vLectures(){
   view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
   const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
-  const cw=d.week||0, done=ls.filter(x=>cw&&x.week<cw).length, pct=ls.length?Math.round(100*done/ls.length):0;
+  const staff=ROLES.includes("lecturer")||ROLES.includes("admin");
+  const cw=d.week||0, done=ls.filter(x=>x.status==='passed'||(cw&&x.week<cw)).length, pct=ls.length?Math.round(100*done/ls.length):0;
   if(_lecOpen==null)_lecOpen=cw||1;
   const asW={};as.forEach(a=>{asW[a.week]=a;});
   const byBlock={};ls.forEach(l=>{(byBlock[l.block]=byBlock[l.block]||{name:l.block_name,items:[]}).items.push(l);});
@@ -363,14 +364,19 @@ async function vLectures(){
   Object.keys(byBlock).sort((a,b)=>a-b).forEach(bk=>{const b=byBlock[bk];
     blocks+=`<div style="margin-bottom:24px"><div class="caps" style="margin-bottom:8px">Блок ${bk} · ${esc(b.name||"")}</div>`;
     b.items.forEach(l=>{
-      const st=cw&&l.week<cw?"done":cw&&l.week===cw?"info":"todo";
-      const [cbg,cfg]=CH[st];const label=st==="done"?"пройдено":st==="info"?"сейчас":"впереди";
+      const st=l.status==='passed'?"done":cw&&l.week===cw?"info":cw&&l.week<cw?"done":"todo";
+      const [cbg,cfg]=CH[st];const label=l.status==='passed'?"проведена":st==="done"?"пройдено":st==="info"?"сейчас":"впереди";
       const open=_lecOpen===l.week;const asg=asW[l.week];
+      const dstr=l.date?l.date.split('-').reverse().join('.'):"";
+      const dl=l.hw_days_left;let dz="";
+      if(dl!=null){const t=dl<0?`ДЗ −${-dl} дн.`:dl===0?"ДЗ сегодня":dl===1?"ДЗ завтра":`ДЗ ${dl} дн.`;
+        dz=dl<0?chip('var(--crit-bg)','var(--crit)',t):dl<=2?chip('var(--warn-bg)','var(--warn)',t):chip('var(--bg2)','var(--ink3)',t);}
       blocks+=`<div class="card" style="padding:0;margin-bottom:8px;overflow:hidden;border-color:${st==='info'?'var(--accent)':'var(--b1)'}">
-        <div role="button" tabindex="0" aria-expanded="${open}" onclick="lecToggle(${l.week})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lecToggle(${l.week})}" style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;opacity:${st==='done'?'.65':'1'}">
+        <div role="button" tabindex="0" aria-expanded="${open}" onclick="lecToggle(${l.week})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lecToggle(${l.week})}" style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;opacity:${st==='done'?'.7':'1'}">
           <span class="mono" style="font-size:12px;font-weight:600;color:var(--ink3);width:24px;flex-shrink:0">${String(l.week).padStart(2,'0')}</span>
           <span style="font-size:14px;font-weight:600;flex:1">${esc(l.title)}</span>
-          ${chip(cbg,cfg,label)}
+          ${dstr?`<span class="mono faint" style="font-size:12px">${dstr}</span>`:""}
+          ${dz}${chip(cbg,cfg,label)}
           <span style="color:var(--ink3);transform:rotate(${open?'180deg':'0'});transition:.15s;display:flex">${ic('chev',16)}</span></div>
         ${open?`<div style="padding:2px 20px 20px;border-top:1px solid var(--b1)">
           ${l.topic?`<div class="sub" style="padding-top:14px;margin-bottom:16px">${esc(l.topic)}</div>`:""}
@@ -397,6 +403,18 @@ async function vLectures(){
               <span style="flex-shrink:0;margin-top:1px">${ic('homework',16)}</span>
               <div><div class="sub" style="font-size:12.5px">${esc(l.practice)}</div>
               <div class="faint" style="margin-top:6px">Практика — не оценивается, но без неё следующая лекция «поедет». Делай через ape.</div></div></div>`:""}
+          ${staff?`<div style="margin-top:20px;padding-top:16px;border-top:1px dashed var(--b2)">
+            <div class="caps" style="margin-bottom:10px">Управление лекцией · только лектор</div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end">
+              <div><div class="faint" style="font-size:11.5px;margin-bottom:4px">Дата этой лекции</div>
+                <div style="display:flex;gap:6px"><input type="date" id="ld_${l.week}" value="${l.date||''}" class="inp" style="width:150px">
+                <button class="btn sm" onclick="lecSchedule(${l.week})">Сохранить</button></div></div>
+              <div><div class="faint" style="font-size:11.5px;margin-bottom:4px">Дата следующей лекции (опц.)</div>
+                <div style="display:flex;gap:6px"><input type="date" id="ln_${l.week}" class="inp" style="width:150px">
+                <button class="btn primary sm" onclick="lecPass(${l.week})">${l.status==='passed'?'✓ Проведена':'Отметить: прошла →'}</button></div></div>
+            </div>
+            <div class="faint" style="margin-top:8px;font-size:11.5px">При изменении даты пересчитываются дедлайны ДЗ и уходит уведомление студентам (портал + бот).</div>
+          </div>`:""}
         </div>`:""}
       </div>`;
     });
@@ -408,6 +426,13 @@ async function vLectures(){
       <div class="pbar"><i style="width:${pct}%"></i></div></div>${blocks}`;
 }
 function lecToggle(w){_lecOpen=_lecOpen===w?null:w;vLectures();}
+async function lecSchedule(w){const dt=$("ld_"+w).value;if(!dt)return toast("Укажи дату");
+  try{await api("/api/lectures/"+w+"/schedule",{method:"POST",body:JSON.stringify({date:dt})});toast("Дата лекции обновлена");vLectures();}
+  catch(e){toast(e.message||"Ошибка");}}
+async function lecPass(w){const nd=$("ln_"+w).value;
+  if(!confirm("Отметить лекцию №"+w+" как проведённую"+(nd?" и назначить следующую на "+nd.split('-').reverse().join('.'):"")+"?"))return;
+  try{await api("/api/lectures/"+w+"/pass",{method:"POST",body:JSON.stringify({next_date:nd})});toast("Лекция отмечена, студенты уведомлены");vLectures();}
+  catch(e){toast(e.message||"Ошибка");}}
 
 // ══════════════ Задания ══════════════
 async function vHomework(){

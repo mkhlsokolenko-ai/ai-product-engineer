@@ -6,7 +6,14 @@ from server import db
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS lectures (
     id SERIAL PRIMARY KEY, week INT, block INT, title TEXT, topic TEXT,
-    outcomes TEXT, skills TEXT, materials_url TEXT, practice TEXT, position INT DEFAULT 0
+    outcomes TEXT, skills TEXT, materials_url TEXT, practice TEXT, position INT DEFAULT 0,
+    scheduled_at DATE, status TEXT DEFAULT 'planned'
+);
+-- Исходящая очередь уведомлений: её дренирует Telegram-бот (пока — зеркалятся в announcements).
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY, kind TEXT, title TEXT, body TEXT, payload TEXT,
+    status TEXT DEFAULT 'pending', created_by TEXT, created_at TIMESTAMPTZ DEFAULT now(),
+    sent_at TIMESTAMPTZ
 );
 -- Материалы, привязанные к конкретной лекции (много на лекцию). lecture_week = lectures.week.
 CREATE TABLE IF NOT EXISTS lecture_materials (
@@ -177,6 +184,8 @@ async def ensure() -> None:
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS outcomes TEXT")
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS skills TEXT")
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS practice TEXT")
+        await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS scheduled_at DATE")
+        await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'planned'")
         await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_lectures_week ON lectures(week)")
         # UPSERT по неделе: код — источник правды для программы курса
         for wk, bl, t, tp, outs, sk, u in LECTURES:

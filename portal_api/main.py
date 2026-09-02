@@ -83,6 +83,14 @@ class LectureMaterialIn(BaseModel):
     title: str = ""
 
 
+class LecturePassIn(BaseModel):
+    next_date: str = ""      # YYYY-MM-DD дата следующей лекции (опц.)
+
+
+class LectureScheduleIn(BaseModel):
+    date: str                # YYYY-MM-DD новая дата этой лекции
+
+
 def _mc(public: bool) -> Minio:
     """MinIO-клиент. public=True -> хост presigned-URL (браузер), иначе внутренний."""
     ep = settings.minio_public if public else settings.minio_internal
@@ -266,27 +274,95 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 
 @app.get("/api/lectures")
 async def lectures(claims: dict = Depends(verify)) -> list[dict]:
+    _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice "
+            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status "
             "FROM lectures ORDER BY position,week"
         )
         rows = await cur.fetchall()
         mrows = await (await c.execute(
             "SELECT id,lecture_week,title,url FROM lecture_materials ORDER BY id")).fetchall()
+        arows = await (await c.execute("SELECT week FROM assignments")).fetchall()
     mats: dict[int, list] = {}
     for mid, wk, title, url in mrows:
         mats.setdefault(wk, []).append({"id": mid, "title": title, "url": url})
+    hw_weeks = {r[0] for r in arows}
+    today = date.today()
     from portal_api.store import BLOCK_NAMES
-    return [
-        {"week": r[0], "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
-         "title": r[2], "topic": r[3], "materials_url": r[4],
-         "materials": mats.get(r[0], []),
-         "outcomes": [x for x in (r[5] or "").split("|") if x],
-         "skills": [x for x in (r[6] or "").split(",") if x],
-         "practice": r[7] or ""}
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        week = r[0]
+        eff = _effective_date(week, r[8], start)
+        item = {
+            "week": week, "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
+            "title": r[2], "topic": r[3], "materials_url": r[4],
+            "materials": mats.get(week, []),
+            "outcomes": [x for x in (r[5] or "").split("|") if x],
+            "skills": [x for x in (r[6] or "").split(",") if x],
+            "practice": r[7] or "",
+            "date": eff.isoformat(),
+            "status": r[9] or "planned",
+        }
+        if week in hw_weeks:
+            # дедлайн ДЗ — неделя от даты лекции; тикает от фактической даты
+            due = eff + timedelta(days=7)
+            item["hw_due"] = due.isoformat()
+            item["hw_days_left"] = (due - today).days
+        out.append(item)
+    return out
+
+
+@app.post("/api/lectures/{week}/pass")
+async def lecture_pass(week: int, body: LecturePassIn, claims: dict = Depends(require_staff)) -> dict:
+    """Отметить лекцию проведённой; опционально назначить дату следующей (с уведомлением)."""
+    by = claims.get("preferred_username", "?")
+    _, start = _course_week()
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT title,scheduled_at FROM lectures WHERE week=%s", (week,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции №{week} нет")
+        # если дата не назначалась — фиксируем фактическую как сегодня
+        await c.execute(
+            "UPDATE lectures SET status='passed', scheduled_at=COALESCE(scheduled_at,%s) WHERE week=%s",
+            (date.today(), week))
+        nxt = await (await c.execute(
+            "SELECT week,title FROM lectures WHERE week>%s ORDER BY week LIMIT 1", (week,))).fetchone()
+        tail = ""
+        payload = {"week": week, "action": "passed"}
+        if body.next_date and nxt:
+            try:
+                nd = date.fromisoformat(body.next_date[:10])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
+            await c.execute("UPDATE lectures SET scheduled_at=%s WHERE week=%s", (nd, nxt[0]))
+            tail = f" Следующая лекция «{nxt[1]}» — {nd.strftime('%d.%m.%Y')}."
+            payload.update({"next_week": nxt[0], "next_date": nd.isoformat()})
+        await _notify(c, "lecture_passed", f"Лекция №{week} проведена",
+                      f"«{row[0]}» отмечена как проведённая.{tail}", by, payload)
+    return {"ok": True}
+
+
+@app.post("/api/lectures/{week}/schedule")
+async def lecture_schedule(week: int, body: LectureScheduleIn, claims: dict = Depends(require_staff)) -> dict:
+    """Назначить/перенести дату лекции — тикают дедлайны ДЗ, летит уведомление в бот."""
+    by = claims.get("preferred_username", "?")
+    try:
+        nd = date.fromisoformat(body.date[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT title,scheduled_at FROM lectures WHERE week=%s", (week,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции №{week} нет")
+        await c.execute("UPDATE lectures SET scheduled_at=%s WHERE week=%s", (nd, week))
+        verb = "перенесена на" if row[1] else "назначена на"
+        await _notify(c, "lecture_scheduled", f"Лекция №{week}: новая дата",
+                      f"«{row[0]}» {verb} {nd.strftime('%d.%m.%Y')}.", by,
+                      {"week": week, "action": "scheduled", "date": nd.isoformat()})
+    return {"ok": True}
 
 
 @app.get("/api/assignments")
@@ -421,6 +497,22 @@ def _course_week() -> tuple[int, date]:
     start = date.fromisoformat(settings.course_start_date)
     delta = (date.today() - start).days
     return (0 if delta < 0 else min(settings.course_weeks, delta // 7 + 1)), start
+
+
+def _effective_date(week: int, scheduled_at, start: date) -> date:
+    """Фактическая дата лекции: явно назначенная лектором или расчётная от старта."""
+    if scheduled_at:
+        return scheduled_at if isinstance(scheduled_at, date) else date.fromisoformat(str(scheduled_at)[:10])
+    return start + timedelta(days=(max(1, week) - 1) * 7)
+
+
+async def _notify(c, kind: str, title: str, body: str, by: str, payload: dict | None = None) -> None:
+    """Кладёт событие в outbox (его дренирует Telegram-бот) и зеркалит в анонсы портала."""
+    await c.execute(
+        "INSERT INTO notifications(kind,title,body,payload,created_by) VALUES(%s,%s,%s,%s,%s)",
+        (kind, title, body, json.dumps(payload or {}, ensure_ascii=False), by))
+    await c.execute("INSERT INTO announcements(title,body,created_by) VALUES(%s,%s,%s)",
+                    (title, body, by))
 
 
 @app.get("/api/dashboard")
