@@ -365,6 +365,72 @@ def mem_add(m: dict, user: str, assistant: str) -> None:
 LAST_REMAIN = None  # остаток недельной квоты (для титульной строки ввода)
 
 
+# ─────────────────────── Скиллы (вкл/выкл, инъекция в system) ───────────────────────
+# name -> (заголовок, зачем, инструкция-стиль для модели)
+SKILLS = {
+    "researcher": ("Researcher", "направленное desk-исследование",
+                   "Проводи направленное исследование: рынок, данные, аналоги; указывай источник каждого факта."),
+    "icp-interviewer": ("ICP Interviewer", "интервью с представителем ICP",
+                        "Прожимай гипотезу ценности от лица ICP: боли, контекст, готовность платить."),
+    "jtbd-formulator": ("JTBD", "Job To Be Done",
+                        "Формулируй задачу через JTBD: какую работу нанимают продукт делать."),
+    "idea-scorer": ("Idea Scorer", "оценка идеи по рубрике",
+                    "Оценивай идею по рубрике (боль, данные, выполнимость, экономика) с баллами и обоснованием."),
+    "idea-selector": ("Idea Selector", "выбор лучшей идеи",
+                      "Сравнивай варианты по критериям и обоснованно выбирай один."),
+    "devils-advocate": ("Devil's Advocate", "жёсткая критика",
+                        "Критикуй без похвалы: где идея/решение сломается, худшие сценарии, риски."),
+    "architecture-chooser": ("Architecture Chooser", "workflow vs agent",
+                             "Выбирай архитектуру (workflow/agent/hybrid) под задачу, не усложняя без нужды."),
+    "mlsdd-writer": ("MLSDD", "ML System Design Doc",
+                     "Структурируй как ML System Design Doc: границы, данные, метрики, риски, деградация."),
+    "agent-design-writer": ("Agent Design", "дизайн агента",
+                            "Проектируй агента: инструменты, память, границы, поведение при сбое."),
+    "adr-writer": ("ADR", "фиксация решений",
+                   "Оформляй ключевые решения как ADR: контекст, варианты, решение, последствия."),
+    "spec-reviewer": ("Spec Reviewer", "полнота спеки",
+                      "Проверяй полноту acceptance-критериев, ищи дыры и неоднозначности."),
+    "cost-estimator": ("Cost Estimator", "стоимость по токенам",
+                       "Оценивай стоимость user-flow в токенах и деньгах, показывай расчёт."),
+    "test-writer": ("Test Writer (TDD)", "тесты до кода",
+                    "Сначала тесты (включая краевые случаи), потом реализация под них."),
+    "memory-architect": ("Memory Architect", "память агента",
+                         "Проектируй двухуровневую память с дистилляцией, контролируй объём контекста."),
+    "rag-architect": ("RAG Architect", "RAG-pipeline",
+                      "Проектируй RAG: chunking/embed/rerank под домен + метрики качества retrieval."),
+    "eval-generator": ("Eval Generator", "eval-датасет и грейдеры",
+                       "Строй eval: кейсы, грейдеры (code/LLM-judge/human), метрики, пороги."),
+    "unit-economics-checker": ("Unit Economics", "проверка экономики",
+                               "Проверяй unit-экономику на пользователя, ищи дыры до масштабирования."),
+    "grill-me": ("Grill Me", "жёсткий допрос",
+                 "Допрашивай по дереву решений, дожимай до цифр и критериев, подсвечивай слабые места."),
+    "conventional-commits": ("Conventional Commits", "дисциплина коммитов",
+                             "Сообщения коммитов — по Conventional Commits (feat/fix/... + суть)."),
+    "fastapi-patterns": ("FastAPI Patterns", "паттерны FastAPI",
+                         "Пиши FastAPI по best practices: схемы, зависимости, обработка ошибок."),
+    "docker-patterns": ("Docker Patterns", "паттерны Docker",
+                        "Docker по best practices: слои, кэш, минимальный образ, воспроизводимость."),
+}
+
+
+def skills_active() -> list[str]:
+    return [s for s in load_cfg().get("skills", []) if s in SKILLS]
+
+
+def skills_set(names) -> None:
+    cfg = load_cfg(); cfg["skills"] = sorted(set(names)); save_cfg(cfg)
+
+
+def skills_system(base: str) -> str:
+    """Добавляет в system-промпт инструкции активных скиллов."""
+    act = skills_active()
+    if not act:
+        return base
+    block = "\n".join(f"- {SKILLS[s][0]} ({s}): {SKILLS[s][2]}" for s in act)
+    add = "\n\n[Активные навыки — применяй их подход]\n" + block
+    return (base + add).strip()
+
+
 # ─────────────────────── команды ───────────────────────
 
 def _read_prompt(text: str | None, files: list[str], stdin: bool) -> str:
@@ -421,7 +487,12 @@ def _spin_call(tool: str, args: dict):
 def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None:
     global LAST_REMAIN
     label = {"code": "Qwen3.8-27B", "research": "DeepSeek", "standard": "каскад"}.get(profile, profile)
-    print(col(f"  → {label}", "dim"), file=sys.stderr)
+    system = skills_system(system)  # подмешиваем активные скиллы
+    act = skills_active()
+    head = f"  → {label}"
+    if act:
+        head += f"   {C['cy']}🧩 {', '.join(act)}{C['off']}{C['dim']}"
+    print(col(head, "dim"), file=sys.stderr)
     out = _spin_call("chat", {"prompt": prompt, "session_id": _session_id(),
                               "profile": profile, "system": system, "max_tokens": max_tokens})
     res, elapsed = out if isinstance(out, tuple) else (out, None)
@@ -609,6 +680,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/code{C['off']} <текст>    код на Qwen3.8-27B
     {C['cy']}/ask{C['off']}  <текст>    ресёрч / рассуждения на DeepSeek
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
+    {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
     {C['cy']}/memory{C['off']}          показать, что агент помнит
@@ -660,6 +732,7 @@ _CMDS = [
     ("/code", "код на Qwen3.8-27B"),
     ("/ask", "ресёрч / рассуждения на DeepSeek"),
     ("/mode", "режим по умолчанию (code|ask)"),
+    ("/skills", "скиллы: список, вкл/выкл"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/memory", "что агент помнит"),
     ("/forget", "очистить память сессии"),
@@ -756,6 +829,52 @@ def _read_input(mode: str) -> str:
             buf += ch; sel = 0; redraw()
 
 
+def _skills_menu() -> None:
+    """Интерактивный список скиллов: ↑↓ выбор, Y вкл, N выкл, Enter/Space переключить, Q выход."""
+    names = sorted(SKILLS.keys())
+    active = set(skills_active())
+    getch = _mk_getch()
+    if getch is None or not sys.stdin.isatty():  # fallback без raw-режима
+        print(col("  Скиллы (переключай: /skills on <имя> | /skills off <имя>):", "bold"))
+        for n in names:
+            mark = f"{C['green']}✓{C['off']}" if n in active else f"{C['dim']}·{C['off']}"
+            print(f"   {mark} {n:<22} {C['dim']}{SKILLS[n][0]}{C['off']}")
+        return
+    sel = 0; N = len(names)
+
+    def draw(first=False):
+        if not first:
+            sys.stdout.write(f"\033[{N + 1}A")
+        sys.stdout.write("\r\033[J")
+        print(f"  {C['bold']}Скиллы{C['off']} {C['dim']}· ↑↓ выбор · Y вкл · N выкл · Enter переключить · Q выход{C['off']}")
+        for i, n in enumerate(names):
+            on = n in active
+            box = f"{C['green']}[✓]{C['off']}" if on else f"{C['dim']}[ ]{C['off']}"
+            if i == sel:
+                print(f"  {C['cy']}▸{C['off']} {box} {C['cy']}{n:<22}{C['off']}{C['gray']}{SKILLS[n][0]}{C['off']}")
+            else:
+                print(f"    {box} {C['dim']}{n:<22}{SKILLS[n][0]}{C['off']}")
+
+    draw(first=True)
+    while True:
+        ch = getch()
+        if ch in ("q", "Q", "\x1b", "\x03"):
+            break
+        elif ch == "UP":
+            sel = (sel - 1) % N; draw()
+        elif ch == "DOWN":
+            sel = (sel + 1) % N; draw()
+        elif ch in ("y", "Y"):
+            active.add(names[sel]); draw()
+        elif ch in ("n", "N"):
+            active.discard(names[sel]); draw()
+        elif ch in ("\r", "\n", " "):
+            active.discard(names[sel]) if names[sel] in active else active.add(names[sel]); draw()
+    skills_set(active)
+    sys.stdout.write("\r\033[J")
+    print(f"  {C['cy']}Активно скиллов: {len(active)}{f' · {chr(0x1F9E9)} ' + ', '.join(sorted(active)) if active else ''}{C['off']}")
+
+
 def _repl() -> None:
     global LAST_REMAIN
     os.system("")  # активирует VT на некоторых Windows-консолях
@@ -805,6 +924,20 @@ def _repl() -> None:
                         cmd_rag(type("A", (), {"rag_cmd": "index", "files": sp[1].split()}))
                     else:
                         print(col("  /rag search <запрос>  или  /rag index <файлы>", "gray"))
+                elif cmd == "skills":
+                    sp = rest.split()
+                    if not sp:
+                        _skills_menu()
+                    elif sp[0] == "on" and len(sp) > 1:
+                        act = set(skills_active()) | {s for s in sp[1:] if s in SKILLS}
+                        skills_set(act); print(col(f"  включено: {', '.join(sorted(act)) or '—'}", "cy"))
+                    elif sp[0] == "off" and len(sp) > 1:
+                        act = set(skills_active()) - set(sp[1:])
+                        skills_set(act); print(col(f"  активно: {', '.join(sorted(act)) or '—'}", "cy"))
+                    elif sp[0] == "clear":
+                        skills_set([]); print(col("  все скиллы выключены", "cy"))
+                    else:
+                        print(col("  /skills — меню · /skills on <имя> · /skills off <имя> · /skills clear", "gray"))
                 elif cmd == "memory":
                     m = mem_load()
                     if m.get("summary"):
