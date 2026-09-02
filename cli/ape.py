@@ -499,7 +499,7 @@ def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None
     if res.get("error"):
         print(col(res.get("message", res["error"]), "yellow")); return None
     text = res.get("text", "")
-    _print_answer(text, res.get("truncated"))
+    _print_answer(text, res.get("truncated"), collapse=(profile != "code"))
     q = (res.get("quota") or {}).get("week", {})
     if q.get("remaining") is not None:
         LAST_REMAIN = q["remaining"]
@@ -515,26 +515,50 @@ def _chat(profile: str, prompt: str, system: str, max_tokens: int) -> str | None
 
 
 LAST_ANSWER = ""       # полный текст последнего ответа (для /more и /save)
-PREVIEW_LINES = 24     # сколько строк показываем сразу
+PREVIEW_LINES = 30     # сколько строк показываем сразу
 
 
-def _print_answer(text: str, truncated: bool = False) -> None:
-    """Печатает ответ; длинный сворачивает до превью с подсказкой /more и /save."""
+def _colorize(lines):
+    """Внутри код-блоков (```) подсвечивает diff: +добавлено голубым, -удалено красным."""
+    if not _ANSI:
+        return lines
+    out = []; fence = False
+    for ln in lines:
+        st = ln.lstrip()
+        if st.startswith("```"):
+            fence = not fence; out.append(ln); continue
+        if fence:
+            if st.startswith(("+++", "---")):
+                out.append(ln)
+            elif st.startswith("+"):
+                out.append(C["cy"] + ln + C["off"])      # добавлено — голубой
+            elif st.startswith("-"):
+                out.append(C["red"] + ln + C["off"])      # удалено — красный
+            elif st.startswith("@@"):
+                out.append(C["dim"] + ln + C["off"])
+            else:
+                out.append(ln)
+        else:
+            out.append(ln)
+    return out
+
+
+def _print_answer(text: str, truncated: bool = False, collapse: bool = True) -> None:
+    """Печатает ответ с diff-подсветкой; длинный (если collapse) сворачивает до превью."""
     global LAST_ANSWER
     LAST_ANSWER = text
     lines = text.split("\n")
-    if len(lines) <= PREVIEW_LINES + 3 and sys.stdout.isatty():
-        print(text)
-    elif not sys.stdout.isatty():
-        print(text)  # пайп/скрипт — не режем
+    colored = _colorize(lines)
+    if (not collapse) or (not sys.stdout.isatty()) or len(lines) <= PREVIEW_LINES + 3:
+        print("\n".join(colored))
     else:
-        print("\n".join(lines[:PREVIEW_LINES]))
+        print("\n".join(colored[:PREVIEW_LINES]))
         rest = len(lines) - PREVIEW_LINES
         print(col(f"  ⋯ ещё {rest} строк · /more — раскрыть полностью · /save <файл> — сохранить",
                   "cy"))
     if truncated:
-        print(col("  ⚠ ответ упёрся в лимит длины — повтори «продолжи» или подними лимит "
-                  "(/ask с большим объёмом)", "yellow"))
+        print(col("  ⚠ ответ упёрся в лимит длины — напиши «продолжи» или повтори с большим объёмом",
+                  "yellow"))
 
 
 def cmd_code(a):
@@ -831,10 +855,10 @@ def _read_input(mode: str) -> str:
         ch = getch()
         if ch in ("\r", "\n"):
             ms = _matches(buf)
-            # если это чистый префикс команды и есть выбор — можно докомплитить Enter'ом,
-            # но по умолчанию Enter отправляет как есть
+            # если открыт список — Enter выбирает подсвеченную команду; иначе отправляет как есть
+            chosen = ms[min(sel, len(ms) - 1)][0] if ms else buf
             sys.stdout.write("\r\033[J\n"); sys.stdout.flush()
-            return buf
+            return chosen
         if ch == "\x03":  # Ctrl+C
             sys.stdout.write("\r\033[J"); sys.stdout.flush()
             raise KeyboardInterrupt
@@ -923,7 +947,9 @@ def _repl() -> None:
         try:
             if line.startswith("/"):
                 parts = line[1:].split(maxsplit=1)
-                cmd = (parts[0] or "").lower()
+                if not parts:
+                    continue
+                cmd = parts[0].lower()
                 rest = parts[1].strip() if len(parts) > 1 else ""
                 if cmd in ("exit", "quit", "q"):
                     print(col("  До связи!", "cy")); break
@@ -977,7 +1003,7 @@ def _repl() -> None:
                     print(col("  Память этой сессии очищена.", "cy"))
                 elif cmd == "more":
                     if LAST_ANSWER:
-                        print(LAST_ANSWER)
+                        print("\n".join(_colorize(LAST_ANSWER.split("\n"))))
                     else:
                         print(col("  Нечего раскрывать — сначала задай вопрос.", "gray"))
                 elif cmd == "save":
