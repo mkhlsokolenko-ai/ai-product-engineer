@@ -1841,6 +1841,7 @@ def recall_longterm(query: str, k: int = 4) -> list:
     if not os.path.exists(path):
         return []
     words = {w for w in re.findall(r"\w{4,}", (query or "").lower())}
+    now = time.time()
     scored = []
     try:
         with open(path, encoding="utf-8") as f:
@@ -1848,6 +1849,9 @@ def recall_longterm(query: str, k: int = 4) -> list:
                 try:
                     rec = json.loads(line)
                 except ValueError:
+                    continue
+                ttl = int(rec.get("ttl_days", 0))                 # забытое по TTL не поднимаем
+                if ttl > 0 and float(rec.get("saved_ts", now)) + ttl * 86400 < now:
                     continue
                 txt = (rec.get("text", "") + " " + rec.get("key", "")).lower()
                 hits = sum(1 for w in words if w in txt)
@@ -2097,24 +2101,85 @@ def _t_handoff(a):
     return f"передано → {dst}: «{task}». Оркестратор поднимет эстафету следующей волной."
 
 
+# Retention долговременной памяти по КРИТИЧНОСТИ (практика records-retention банков/корпораций):
+# чем операционнее — тем короче живёт (не раздуваем постоянную память); чем критичнее/нормативнее — тем дольше.
+_MEM_TTL_DAYS = {
+    "operational": 7,      # BAU-рутина, дейли-крошки — квартальный шум не нужен
+    "important": 90,       # тактическая аналитика/отчёты — квартал
+    "critical": 365,       # business-critical: фин-решения, оценки, арх-решения — год
+    "regulatory": 1825,    # нормативное хранение (AML/audit-trail) — 5 лет
+    "permanent": 0,        # институциональное знание — без TTL (0 = не истекает)
+}
+# эвристика класса по ключу, если критичность не задана явно
+_MEM_KEY_HINT = [
+    ("critical", ("valuation", "оценк", "решени", "decision", "adr", "dcf", "бюджет", "budget", "контракт")),
+    ("regulatory", ("аудит", "audit", "комплаенс", "complianc", "kyc", "aml", "регул", "норматив")),
+    ("operational", ("дейли", "daily", "статус", "status", "крошк", "note", "todo", "напоминан")),
+]
+
+
+def _mem_class(key: str, explicit: str) -> str:
+    if explicit in _MEM_TTL_DAYS:
+        return explicit
+    k = (key or "").lower()
+    for cls, words in _MEM_KEY_HINT:
+        if any(w in k for w in words):
+            return cls
+    return "important"
+
+
+def forget_expired() -> int:
+    """Забывание по TTL: удаляет протухшие записи из долговременной памяти. Возвращает число удалённых."""
+    path = os.path.join(CFG_DIR, "longterm.jsonl")
+    if not os.path.exists(path):
+        return 0
+    now = time.time()
+    keep, dropped = [], 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                ttl = int(rec.get("ttl_days", 0))
+                saved = float(rec.get("saved_ts", now))
+                if ttl > 0 and saved + ttl * 86400 < now:
+                    dropped += 1
+                    continue
+                keep.append(rec)
+        if dropped:
+            with open(path, "w", encoding="utf-8") as f:
+                for rec in keep:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError:
+        return 0
+    return dropped
+
+
 def _t_remember(a):
-    """Долговременная память: сохранить результат/находку (переживает прогон) + крошку на доску.
-    Разделение памяти: доска = рабочая память прогона, это — долговременный слой (упрощённый Data Plane)."""
+    """Долговременная память с ЗАБЫВАНИЕМ по TTL (retention от критичности задачи).
+    Разделение памяти: доска = рабочая память прогона, это — долговременный слой (упрощённый Data Plane).
+    criticality: operational|important|critical|regulatory|permanent (иначе — эвристика по ключу)."""
     text = str(a.get("text") or a.get("value") or "").strip()
     if not text:
         return "нечего запоминать — укажи text"
     key = str(a.get("key", "")).strip() or "note"
+    cls = _mem_class(key, str(a.get("criticality", "")).strip().lower())
+    ttl = _MEM_TTL_DAYS[cls]
     me = a.get("_agent", "агент")
     try:
         path = os.path.join(CFG_DIR, "longterm.jsonl")
         os.makedirs(CFG_DIR, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"key": key, "text": text[:2000], "agent": me,
-                                "session": _session_id()}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"key": key, "text": text[:2000], "agent": me, "session": _session_id(),
+                                "criticality": cls, "ttl_days": ttl, "saved_ts": time.time()},
+                               ensure_ascii=False) + "\n")
     except OSError as e:
         return f"не удалось сохранить: {e}"
-    bb_append({"type": "note", "text": f"→ долговременная память [{key}]: {text[:120]}", "agent": me})
-    return f"сохранено в долговременную память [{key}] и отмечено на доске"
+    bb_append({"type": "note", "text": f"→ долговременная память [{key}] ({cls}): {text[:120]}", "agent": me})
+    life = "без срока" if ttl == 0 else f"живёт {ttl} дн."
+    return f"сохранено в долговременную память [{key}], класс {cls} ({life}) и отмечено на доске"
 
 
 AGENT_TOOLS = {
@@ -2127,7 +2192,7 @@ AGENT_TOOLS = {
     "bb_claim": (_t_bb_claim, 'застолбить подзадачу, чтобы её не делал другой — args: {"task":"..."}'),
     "use_skill": (_t_use_skill, 'подгрузить полную методику навыка ПЕРЕД применением — args: {"id":"<skill-id>"}'),
     "handoff": (_t_handoff, 'передать задачу другой роли/семье (эстафета) — args: {"task":"...","family":"...","member":"...","result":"..."}'),
-    "remember": (_t_remember, 'сохранить результат/находку в долговременную память — args: {"key":"...","text":"..."}'),
+    "remember": (_t_remember, 'сохранить в долговременную память (с TTL по критичности) — args: {"key":"...","text":"...","criticality":"operational|important|critical|regulatory|permanent"}'),
     "data_query": (lambda a: json.dumps(
         data_query(a.get("entity", ""), a.get("filter") if isinstance(a.get("filter"), dict) else None,
                    a.get("fields") if isinstance(a.get("fields"), list) else None,
@@ -2375,6 +2440,9 @@ def cmd_agents(goal: str) -> None:
     files_hint = (" На доске уже лежат факты «файл:…» с содержимым приложенных файлов — "
                   "используй их (bb_read), не проси прислать файл.") if atts else ""
     _STOP.clear()
+    _forgot = forget_expired()                             # забывание по TTL: не раздуваем постоянную память
+    if _forgot:
+        print(col(f"  🧠 память: забыто по TTL {_forgot} устаревших запис(и/ей)", "dim"), file=sys.stderr)
     print(col("  ⟳ планирую волны…", "dim"), file=sys.stderr)
     fam_roster = "; ".join(f"{k} ({AGENT_FAMILIES[k]['title']})" for k in AGENT_FAMILIES)
     try:
