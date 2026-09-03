@@ -230,5 +230,15 @@ artifacts[], provenance}`. Один слой обслуживает и CLI `ape`
 ---
 
 ## 9. Связанные материалы
-- Принципы Agent/Blackboard/волны/tools — реализованы в `cli/ape.py` (см. [`../cli/README.md`]).
+
+**Комплект документов ABOP (как у LUDA v2):**
+- [`ABOP_PRD.md`](ABOP_PRD.md) — что и зачем (продукт, проблема, границы, пользователи, концепции).
+- [`ABOP_ADR.md`](ABOP_ADR.md) — 21 архитектурное решение (Nygard); канон ссылок ADR-0NN.
+- [`ABOP_AOP.md`](ABOP_AOP.md) — Agent Operating Protocol: роли, дисциплина, фазы прогона, стык с LUDA.
+- [`ABOP_TDR.md`](ABOP_TDR.md) — техническое устройство (топология, компоненты, модель данных, инварианты).
+- [`AGENT_FAMILIES_GUIDE.md`](AGENT_FAMILIES_GUIDE.md) — как назначать задачи семьям/ролям (для пользователя).
+- Этот документ (`ABOP_ARD.md`) — архитектурный обзор (3 плоскости, Data Plane).
+
+**Реализация и полигон:**
+- Принципы Agent/Blackboard/волны/tools/семьи — реализованы в `cli/ape.py` (см. [`../cli/README.md`]).
 - Дизайн-система/портал — [`DESIGN.md`](DESIGN.md), [`DESIGN_SPEC.md`](DESIGN_SPEC.md).
