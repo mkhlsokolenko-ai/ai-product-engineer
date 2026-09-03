@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS grades (
 );
 CREATE TABLE IF NOT EXISTS announcements (
     id SERIAL PRIMARY KEY, title TEXT, body TEXT, created_by TEXT,
+    attach_url TEXT, attach_name TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS projects (
@@ -280,6 +281,8 @@ async def ensure() -> None:
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'planned'")
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS code TEXT")
         await c.execute("ALTER TABLE lectures ADD COLUMN IF NOT EXISTS seq INT DEFAULT 1")
+        await c.execute("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attach_url TEXT")
+        await c.execute("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attach_name TEXT")
         # Переход на ключ по code: неделя больше НЕ уникальна (2–3 лекции/нед по программе v0.6).
         await c.execute("DROP INDEX IF EXISTS ux_lectures_week")
         # Одноразовая чистка строк старого сида (1 лекция = 1 неделя, без code).

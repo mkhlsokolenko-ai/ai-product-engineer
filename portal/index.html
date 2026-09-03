@@ -190,9 +190,12 @@ const IC={
  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
  up:'<path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v3h16v-3"/>',
  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ down:'<path d="M12 4v12m0 0 4-4m-4 4-4-4"/><path d="M4 16v3h16v-3"/>',
+ clip:'<path d="M21 11.5 12 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9 16.5a1.6 1.6 0 0 1-2.3-2.3l7.8-7.8"/>',
  chev:'<path d="m6 9 6 6 6-6"/>'
 };
 const ic=(n,s=17,st=1.8,color='')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${color||'currentColor'}" stroke-width="${st}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
+const annFile=a=>(a&&a.attach_url)?`<a href="${esc(a.attach_url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:500;color:var(--accent)">${ic('down',15,2)}${esc(a.attach_name||'Скачать файл')}</a>`:"";
 
 // ── Тема ──
 function curTheme(){const s=localStorage.getItem('theme');if(s)return s;return (window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
@@ -323,7 +326,7 @@ async function vHome(){
      <div style="display:flex;flex-direction:column;gap:2px">${onbHtml}</div>
      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span class="sub">Застрял на подключении MCP?</span><button class="btn sm" onclick="go('cabinet')">Инструкция по подключению</button></div></div>`:""}
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Анонсы</div>
-     ${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>`;
+     ${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}</div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>`;
 }
 
 // ══════════════ Курс ══════════════
@@ -524,7 +527,7 @@ async function vCommunity(){
   const rows=board.map((r,i)=>{const mine=r.username===me;
     return `<tr style="background:${mine?'var(--accent-bg)':'transparent'}"><td class="mono" style="color:var(--ink3)">${i+1}</td><td style="font-weight:500">${esc(r.username)} ${mine?'<span class="chip" style="background:var(--accent-bg);color:var(--accent)">ты</span>':''}</td><td class="mono" style="color:var(--ink2)">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(1)} ₽</td></tr>`;}).join("");
   $("cm").innerHTML=`
-   <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
+   <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}<div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
    <div class="card"><div class="t18" style="margin-bottom:4px">Лидерборд по токенам · неделя</div><div class="sub" style="margin-bottom:16px">Кто активнее всех гоняет агентов. Не оценка — сигнал вовлечённости.</div>
      <div style="display:flex;flex-direction:column;gap:8px">${bars||empty("community","Пока никто не набрал токенов на этой неделе.")}</div></div>
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Группа</div><table><thead><tr><th>#</th><th>Студент</th><th>Токены</th><th>Cost</th></tr></thead><tbody>${rows||`<tr><td colspan="4"><div class="empty">Группа наполнится после первых входов студентов.</div></td></tr>`}</tbody></table></div>`;
@@ -671,10 +674,22 @@ async function delMat(name){if(!confirm("Удалить файл "+name+" из �
 async function admNotes(){aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px"><div class="t18">Заметки лектора</div><span class="faint mono" id="nState"></span></div><textarea class="ta" id="lnotes" rows="12" style="line-height:1.6" placeholder="Приватные заметки по группе — автосохранение"></textarea></div>`);
   const n=await api("/api/admin/notes").catch(()=>({body:""}));$("lnotes").value=n.body||"";
   $("lnotes").oninput=()=>{$("nState").textContent="сохранение…";clearTimeout(admNotes._t);admNotes._t=setTimeout(async()=>{await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nState").textContent="сохранено";},700);};}
-async function admAnnounce(){aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div><input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px"><textarea class="ta" id="annB" rows="3" placeholder="Текст анонса" style="margin-bottom:14px"></textarea><button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
+let _annAttach=null;
+async function admAnnounce(){_annAttach=null;aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div>
+   <input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px">
+   <textarea class="ta" id="annB" rows="4" placeholder="Текст анонса (переносы строк сохраняются)" style="margin-bottom:12px"></textarea>
+   <div class="dz" id="annDz" role="button" tabindex="0" style="padding:16px;margin-bottom:6px">${ic('clip',20,1.8,'var(--accent)')}<div style="font-size:13px;font-weight:500;margin-top:6px">Прикрепить файл — перетащите или нажмите</div><div class="faint" style="margin-top:2px">PDF, MD, ZIP · попадёт в публичный бакет, студенты скачают</div><input type="file" id="annIn" style="display:none"></div>
+   <div id="annFileMsg" class="faint" style="margin-bottom:12px"></div>
+   <button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Опубликованные</div><div id="annList">${skLine("50%")+skLine("80%")}</div></div>`);
-  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||empty(null,"Анонсов пока нет.");}
-async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value})});toast("Анонс опубликован");admAnnounce();}
+  wireDrop($("annDz"),$("annIn"),annAttachUpload);
+  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}<div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||empty(null,"Анонсов пока нет.");}
+async function annAttachUpload(files){const f=files[0];if(!f)return;const msg=$("annFileMsg");msg.textContent="Загрузка "+f.name+"…";
+  try{const fd=new FormData();fd.append("file",f,f.name);const r=await fetch("/api/admin/material-upload",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd});if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();_annAttach={url:j.public_url,name:j.name};msg.innerHTML=`Прикреплён: <b>${esc(j.name)}</b> · <a href="#" onclick="_annAttach=null;document.getElementById('annFileMsg').textContent='';return false" style="color:var(--crit)">убрать</a>`;}
+  catch(e){msg.textContent="Ошибка загрузки: "+e.message;}}
+async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");
+  await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value,attach_url:(_annAttach&&_annAttach.url)||"",attach_name:(_annAttach&&_annAttach.name)||""})});
+  _annAttach=null;toast("Анонс опубликован");admAnnounce();}
 
 // ── Модалки ──
 function showModal(title,fields,cta,submit){

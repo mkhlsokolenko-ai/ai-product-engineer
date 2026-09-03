@@ -42,6 +42,8 @@ class GradeIn(BaseModel):
 class AnnIn(BaseModel):
     title: str
     body: str
+    attach_url: str = ""
+    attach_name: str = ""
 
 
 class ProjectIn(BaseModel):
@@ -584,7 +586,8 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         emb = (await (await c.execute(
             "SELECT COUNT(*) FROM cost_journal WHERE student_id=%s AND kind='embed'", (sub,))).fetchone())[0]
         anns = await (await c.execute(
-            "SELECT title,body,created_at FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
+            "SELECT title,body,created_at,attach_url,attach_name "
+            "FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
     cur_lec = None
     for w, t, tp in lecs:
         if w <= max(1, week):
@@ -627,7 +630,8 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         "progress_pct": round(100 * week / settings.course_weeks) if week else 0,
         "current_lecture": cur_lec, "next_deadline": nd,
         "onboarding": onboarding, "achievements": ach,
-        "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat()} for a in anns],
+        "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat(),
+                            "attach_url": a[3] or "", "attach_name": a[4] or ""} for a in anns],
     }
 
 
@@ -635,15 +639,19 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
 async def announcements(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         rows = await (await c.execute(
-            "SELECT title,body,created_by,created_at FROM announcements ORDER BY created_at DESC LIMIT 50")).fetchall()
-    return [{"title": r[0], "body": r[1], "by": r[2], "created_at": r[3].isoformat()} for r in rows]
+            "SELECT title,body,created_by,created_at,attach_url,attach_name "
+            "FROM announcements ORDER BY created_at DESC LIMIT 50")).fetchall()
+    return [{"title": r[0], "body": r[1], "by": r[2], "created_at": r[3].isoformat(),
+             "attach_url": r[4] or "", "attach_name": r[5] or ""} for r in rows]
 
 
 @app.post("/api/admin/announcements")
 async def post_announcement(body: AnnIn, claims: dict = Depends(require_staff)) -> dict:
     async with db._conn() as c:  # noqa: SLF001
-        await c.execute("INSERT INTO announcements(title,body,created_by) VALUES(%s,%s,%s)",
-                        (body.title, body.body, claims.get("preferred_username", "?")))
+        await c.execute(
+            "INSERT INTO announcements(title,body,created_by,attach_url,attach_name) VALUES(%s,%s,%s,%s,%s)",
+            (body.title, body.body, claims.get("preferred_username", "?"),
+             body.attach_url or None, body.attach_name or None))
     return {"ok": True}
 
 
