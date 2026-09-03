@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from jwt import PyJWKClient
 from minio import Minio
 from pydantic import BaseModel
@@ -871,12 +871,24 @@ async def del_material(filename: str, claims: dict = Depends(require_staff)) -> 
 @app.get("/api/dl")
 async def download_material(name: str):
     """Принудительное скачивание файла из публичного бакета materials (Content-Disposition:
-    attachment). Без auth — бакет и так публичный; эндпоинт лишь форсит «скачать», а не «открыть»."""
+    attachment). Стрим с ВНУТРЕННЕГО MinIO (без hairpin/presign). Без auth — бакет и так публичный,
+    эндпоинт лишь форсит «скачать», а не «открыть»."""
+    from urllib.parse import quote
     safe = name.replace("/", "_").replace("\\", "_").replace("..", "_").strip()
-    url = _mc(True).presigned_get_object(
-        "materials", safe, expires=timedelta(hours=1),
-        response_headers={"response-content-disposition": f'attachment; filename="{safe}"'})
-    return RedirectResponse(url)
+    r = None
+    try:
+        r = _mc(False).get_object("materials", safe)
+        data = r.read()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    finally:
+        if r is not None:
+            try:
+                r.close(); r.release_conn()
+            except Exception:  # noqa: BLE001
+                pass
+    return Response(content=data, media_type="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe)}"})
 
 
 @app.post("/api/admin/lecture-material")
