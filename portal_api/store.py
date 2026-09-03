@@ -285,21 +285,19 @@ async def ensure() -> None:
         # Одноразовая чистка строк старого сида (1 лекция = 1 неделя, без code).
         await c.execute("DELETE FROM lectures WHERE code IS NULL")
         await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_lectures_code ON lectures(code)")
-        # Практика «к следующей паре» — на последнюю лекцию недели.
-        last_seq: dict[int, int] = {}
-        for _, wk, seq, *_ in LECTURES:
-            last_seq[wk] = max(last_seq.get(wk, 0), seq)
-        # UPSERT по code: код — источник правды для программы; дату/статус лектора не трогаем.
-        for pos, (code, wk, seq, bl, t, tp, outs, sk) in enumerate(LECTURES, 1):
-            practice = PRACTICE.get(wk, "") if seq == last_seq[wk] else ""
-            await c.execute(
-                "INSERT INTO lectures(code,week,seq,block,title,topic,outcomes,skills,practice,position) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                "ON CONFLICT(code) DO UPDATE SET week=EXCLUDED.week, seq=EXCLUDED.seq, "
-                "block=EXCLUDED.block, title=EXCLUDED.title, topic=EXCLUDED.topic, "
-                "outcomes=EXCLUDED.outcomes, skills=EXCLUDED.skills, practice=EXCLUDED.practice, "
-                "position=EXCLUDED.position",
-                (code, wk, seq, bl, t, tp, "|".join(outs), ",".join(sk), practice, pos))
+        # Сид программы — ТОЛЬКО в пустую таблицу: дальше планом владеет лектор (CRUD в портале),
+        # правки/добавления не перезатираются при рестарте.
+        have = (await (await c.execute("SELECT COUNT(*) FROM lectures")).fetchone())[0]
+        if have == 0:
+            last_seq: dict[int, int] = {}
+            for _, wk, seq, *_ in LECTURES:
+                last_seq[wk] = max(last_seq.get(wk, 0), seq)
+            for pos, (code, wk, seq, bl, t, tp, outs, sk) in enumerate(LECTURES, 1):
+                practice = PRACTICE.get(wk, "") if seq == last_seq[wk] else ""
+                await c.execute(
+                    "INSERT INTO lectures(code,week,seq,block,title,topic,outcomes,skills,practice,position) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (code, wk, seq, bl, t, tp, "|".join(outs), ",".join(sk), practice, pos))
         n = (await (await c.execute("SELECT COUNT(*) FROM assignments")).fetchone())[0]
         if n == 0:
             for wk, t, d, f, ms in ASSIGNMENTS:

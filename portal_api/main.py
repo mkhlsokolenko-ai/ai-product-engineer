@@ -91,6 +91,17 @@ class LectureScheduleIn(BaseModel):
     date: str                # YYYY-MM-DD новая дата этой лекции
 
 
+class LectureIn(BaseModel):
+    week: int
+    seq: int = 1
+    block: int = 1
+    title: str
+    topic: str = ""
+    outcomes: list[str] = []
+    skills: list[str] = []
+    practice: str = ""
+
+
 def _mc(public: bool) -> Minio:
     """MinIO-клиент. public=True -> хост presigned-URL (браузер), иначе внутренний."""
     ep = settings.minio_public if public else settings.minio_internal
@@ -278,7 +289,7 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
             "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status,code,seq "
-            "FROM lectures ORDER BY position,week,seq"
+            "FROM lectures ORDER BY week,seq,position"
         )
         rows = await cur.fetchall()
         mrows = await (await c.execute(
@@ -367,6 +378,43 @@ async def lecture_schedule(code: str, body: LectureScheduleIn, claims: dict = De
         await _notify(c, "lecture_scheduled", f"Новая дата: {row[0]}",
                       f"«{row[0]}» {verb} {nd.strftime('%d.%m.%Y')}.", by,
                       {"code": code, "action": "scheduled", "date": nd.isoformat()})
+    return {"ok": True}
+
+
+@app.post("/api/lectures")
+async def lecture_create(body: LectureIn, claims: dict = Depends(require_staff)) -> dict:
+    """Добавить лекцию (план ведёт лектор). Возвращает code новой лекции."""
+    import uuid
+    code = "u" + uuid.uuid4().hex[:10]
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO lectures(code,week,seq,block,title,topic,outcomes,skills,practice,position) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (code, body.week, body.seq, body.block, body.title, body.topic,
+             "|".join(body.outcomes), ",".join(body.skills), body.practice, body.week * 100 + body.seq))
+    return {"ok": True, "code": code}
+
+
+@app.put("/api/lectures/{code}")
+async def lecture_update(code: str, body: LectureIn, claims: dict = Depends(require_staff)) -> dict:
+    """Редактировать лекцию (дату/статус не трогаем — они управляются отдельно)."""
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute("SELECT id FROM lectures WHERE code=%s", (code,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
+        await c.execute(
+            "UPDATE lectures SET week=%s, seq=%s, block=%s, title=%s, topic=%s, "
+            "outcomes=%s, skills=%s, practice=%s, position=%s WHERE code=%s",
+            (body.week, body.seq, body.block, body.title, body.topic,
+             "|".join(body.outcomes), ",".join(body.skills), body.practice,
+             body.week * 100 + body.seq, code))
+    return {"ok": True}
+
+
+@app.delete("/api/lectures/{code}")
+async def lecture_delete(code: str, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("DELETE FROM lectures WHERE code=%s", (code,))
     return {"ok": True}
 
 
