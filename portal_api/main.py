@@ -576,7 +576,8 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
     sub = claims["sub"]
     week, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
-        lecs = await (await c.execute("SELECT week,title,topic FROM lectures ORDER BY week")).fetchall()
+        lecs = await (await c.execute(
+            "SELECT code,week,seq,title,topic,scheduled_at,status FROM lectures ORDER BY week,seq")).fetchall()
         asgs = await (await c.execute("SELECT id,week,title FROM assignments ORDER BY week")).fetchall()
         accepted = {r[0] for r in await (await c.execute(
             "SELECT assignment_id FROM submissions WHERE student_id=%s AND status='accepted'", (sub,))).fetchall()}
@@ -589,19 +590,35 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         anns = await (await c.execute(
             "SELECT title,body,created_at,attach_url,attach_name "
             "FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
-    cur_lec = None
-    for w, t, tp in lecs:
-        if w <= max(1, week):
-            cur_lec = {"week": w, "title": t, "topic": tp}
-    if cur_lec is None and lecs:
-        cur_lec = {"week": lecs[0][0], "title": lecs[0][1], "topic": lecs[0][2]}
+    # code,week,seq,title,topic,scheduled_at,status
+    def _eff(r):
+        return _effective_date(r[1], r[5], start)
+    # карта «неделя → последняя лекция недели» (для дедлайнов ДЗ)
+    last_by_week: dict[int, tuple] = {}
+    for r in lecs:
+        if r[1] not in last_by_week or (r[2] or 1) >= (last_by_week[r[1]][2] or 1):
+            last_by_week[r[1]] = r
+    # текущая лекция = ближайшая НЕ проведённая по фактической дате; если все прошли — последняя
+    pending = [r for r in lecs if (r[6] or "planned") != "passed"]
+    pool = pending or lecs
+    cur = min(pool, key=lambda r: (_eff(r), r[1], r[2] or 1)) if pool else None
+    cur_lec = ({"code": cur[0], "week": cur[1], "seq": cur[2], "title": cur[3], "topic": cur[4],
+                "date": _eff(cur).isoformat(), "status": cur[6] or "planned"} if cur else None)
     now = datetime.now(timezone.utc)
     nd = None
+    cand = []
     for aid, aw, at in asgs:
-        due = datetime.combine(start + timedelta(days=aw * 7), datetime.min.time(), tzinfo=timezone.utc)
-        if aid not in accepted and due > now:
-            nd = {"title": at, "week": aw, "due": due.date().isoformat(), "days_left": (due - now).days}
-            break
+        if aid in accepted:
+            continue
+        lw = last_by_week.get(aw)
+        base = _eff(lw) if lw else start + timedelta(days=(max(1, aw) - 1) * 7)
+        due = datetime.combine(base + timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)
+        if due > now:
+            cand.append((due, at, aw))
+    if cand:
+        cand.sort(key=lambda x: x[0])
+        due, at, aw = cand[0]
+        nd = {"title": at, "week": aw, "due": due.date().isoformat(), "days_left": (due - now).days}
     try:
         files = sum(1 for _ in _mc(False).list_objects(settings.minio_bucket, prefix=f"{sub}/", recursive=True))
     except Exception:  # noqa: BLE001

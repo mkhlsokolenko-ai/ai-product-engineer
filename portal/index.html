@@ -310,16 +310,16 @@ async function vHome(){
      <div style="flex:1;min-width:240px">
        <div class="caps" style="margin-bottom:6px">${d.week?("Неделя "+d.week+" из "+d.weeks):"Курс скоро стартует"}</div>
        <div style="font-size:22px;font-weight:600;margin-bottom:4px">Привет, ${esc((d.student||"студент").split(/\s+/)[0])}</div>
-       <div class="sub" style="margin-bottom:16px">Продолжай: <strong style="color:var(--ink1)">${esc(cl.title||"—")}</strong></div>
+       <div class="sub" style="margin-bottom:16px">${cl.status==='passed'?'Курс пройден. Следующее:':'Следующая лекция:'} <strong style="color:var(--ink1)">${esc(cl.title||"—")}</strong>${cl.date?` · <span class="mono">${cl.date.split('-').reverse().join('.')}</span>`:""}</div>
        <div style="display:flex;gap:8px;flex-wrap:wrap">
-         <button class="btn primary" onclick="go('lectures')">Продолжить обучение →</button>
+         <button class="btn primary" onclick="goLec('${cl.code||''}')">Продолжить обучение →</button>
          ${nd?`<button class="btn" onclick="go('homework')">К заданию · через ${nd.days_left} дн</button>`:""}
        </div></div></div>
    <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-     <div class="card" style="margin:0"><div class="caps" style="margin-bottom:10px">Текущая лекция</div>
+     <div class="card" style="margin:0"><div class="caps" style="margin-bottom:10px">Следующая лекция</div>
        <div class="t18" style="margin-bottom:6px">${esc(cl.title||"—")}</div>
-       <div class="sub" style="margin-bottom:14px">${esc(cl.topic||"")}</div>
-       <a href="#" onclick="go('lectures');return false">Материалы лекции →</a></div>
+       <div class="sub" style="margin-bottom:14px">${esc(cl.topic||"")}${cl.date?` · <span class="mono faint">${cl.date.split('-').reverse().join('.')}</span>`:""}</div>
+       <a href="#" onclick="goLec('${cl.code||''}');return false">Открыть лекцию →</a></div>
      <div class="card" style="margin:0;border-color:${nd&&nd.days_left<=2?'var(--warn)':'var(--b1)'}">
        <div class="caps" style="margin-bottom:10px;color:${nd&&nd.days_left<=2?'var(--warn)':'var(--ink3)'}">${nd?("Ближайший дедлайн · через "+nd.days_left+" дн"):"Дедлайнов нет"}</div>
        ${nd?`<div class="t18" style="margin-bottom:6px">${esc(nd.title)}</div><div class="sub" style="margin-bottom:14px">Неделя ${nd.week}.</div><a href="#" onclick="go('homework');return false">Открыть задание →</a>`:`<div class="sub">Всё сдано 🎉</div>`}</div></div>
@@ -433,6 +433,7 @@ async function vLectures(){
       <div style="display:flex;align-items:center;gap:14px">${staff?`<button class="btn sm" onclick="lecEditModal(null)">${ic('up',14,2)} Добавить лекцию</button>`:""}<div class="mono" style="font-size:23px;font-weight:700;color:var(--accent)">${pct}%</div></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div></div>${blocks}`;
 }
+function goLec(code){if(code)_lecOpen=code;go('lectures');}
 function lecToggle(code){_lecOpen=_lecOpen===code?null:code;vLectures();}
 async function lecSchedule(code){const dt=$("ld_"+code).value;if(!dt)return toast("Укажи дату");
   try{await api("/api/lectures/"+encodeURIComponent(code)+"/schedule",{method:"POST",body:JSON.stringify({date:dt})});toast("Дата лекции обновлена");vLectures();}
