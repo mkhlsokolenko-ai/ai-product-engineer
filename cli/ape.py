@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.15.0"
+APE_VERSION = "1.16.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -166,8 +166,7 @@ def login(idp: str | None = "github") -> None:
     tok = _post_form(KC + "/token", data)
     _store_tokens(tok)
     who = _claims().get("preferred_username") or "студент"
-    print(col(f"Готово. Вошёл как {who}.", "green"))
-    print(col("Дальше: ape code \"…\"  ·  ape ask \"…\"  ·  ape usage", "gray"))
+    print(col(f"Готово. Вошёл как {who}. Можно продолжать — сессию перезапускать не нужно.", "green"))
 
 
 def _post_form(url: str, data: bytes) -> dict:
@@ -215,10 +214,10 @@ def _refresh() -> bool:
 def token() -> str:
     cfg = load_cfg()
     if not cfg.get("access_token"):
-        sys.exit(col("Сначала выполни: ape login", "yellow"))
+        sys.exit(col("Ты не вошёл. Набери /login прямо здесь (или `ape login` в консоли).", "yellow"))
     if time.time() >= cfg.get("expires_at", 0):
         if not _refresh():
-            sys.exit(col("Сессия истекла. Выполни: ape login", "yellow"))
+            sys.exit(col("Сессия истекла. Набери /login прямо здесь — перезапуск не нужен.", "yellow"))
         cfg = load_cfg()
     return cfg["access_token"]
 
