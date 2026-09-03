@@ -444,22 +444,106 @@ SKILLS = {
 }
 
 
+# ─── Два яруса скиллов ──────────────────────────────────────────────────────
+# GLOBAL — кросс-режущие, тумблером /skills для главного чата (CLI-wide).
+# SPECIALIZED — всё остальное: привязано к семьям агентов (§ AGENT_FAMILIES),
+# инжектится только когда работает соответствующая семья, а не глобально.
+GLOBAL_SKILLS = {"researcher", "grill-me", "devils-advocate", "conventional-commits"}
+
+
+def skill_scope(s: str) -> str:
+    return "global" if s in GLOBAL_SKILLS else "specialized"
+
+
 def skills_active() -> list[str]:
-    return [s for s in load_cfg().get("skills", []) if s in SKILLS]
+    # активными для главного чата могут быть только ГЛОБАЛЬНЫЕ скиллы
+    return [s for s in load_cfg().get("skills", []) if s in SKILLS and s in GLOBAL_SKILLS]
 
 
 def skills_set(names) -> None:
-    cfg = load_cfg(); cfg["skills"] = sorted(set(names)); save_cfg(cfg)
+    cfg = load_cfg(); cfg["skills"] = sorted(set(n for n in names if n in GLOBAL_SKILLS)); save_cfg(cfg)
+
+
+def _skill_block(ids) -> str:
+    return "\n".join(f"- {SKILLS[s][0]} ({s}): {SKILLS[s][2]}" for s in ids if s in SKILLS)
 
 
 def skills_system(base: str) -> str:
-    """Добавляет в system-промпт инструкции активных скиллов."""
+    """Добавляет в system-промпт инструкции активных ГЛОБАЛЬНЫХ скиллов."""
     act = skills_active()
     if not act:
         return base
-    block = "\n".join(f"- {SKILLS[s][0]} ({s}): {SKILLS[s][2]}" for s in act)
-    add = "\n\n[Активные навыки — применяй их подход]\n" + block
+    add = "\n\n[Активные навыки — применяй их подход]\n" + _skill_block(act)
     return (base + add).strip()
+
+
+# ─── Role Family агенты (онтология ABOP: Role Family → Skill) ────────────────
+# Именованные персоны для мульти-агентных волн. Каждая ПЕРЕИСПОЛЬЗУЕТ скиллы из
+# SKILLS (не дублирует их): system агента = базовый агент-контракт + миссия семьи
+# + подмешанные инструкции её скиллов. Специализированные скиллы живут здесь.
+AGENT_FAMILIES = {
+    "discovery": ("Дискавери", "Проверяй ценность и спрос: чью боль и как сильно решаем, кто и почему платит.",
+                  ["icp-interviewer", "jtbd-formulator", "researcher", "idea-scorer", "idea-selector"], "research"),
+    "architect": ("Архитектор", "Проектируй КАК строить: архитектура под задачу без лишней сложности; агент/данные/память.",
+                  ["architecture-chooser", "agent-design-writer", "mlsdd-writer", "rag-architect", "memory-architect"], "research"),
+    "critic": ("Критик", "Ищи, где сломается: атакуй решение, дожимай до цифр и критериев, находи дыры в спеке.",
+               ["devils-advocate", "grill-me", "spec-reviewer"], "research"),
+    "economics": ("Экономика", "Проверяй, сходится ли: unit-экономика и стоимость по токенам до масштабирования.",
+                  ["cost-estimator", "unit-economics-checker"], "research"),
+    "delivery": ("Инженер", "Доводи до кода: сначала тесты, затем реализация по best practices (FastAPI/Docker), чистые коммиты.",
+                 ["test-writer", "fastapi-patterns", "docker-patterns", "conventional-commits"], "code"),
+    "decisions": ("Решения", "Фиксируй знание: ADR по ключевым развилкам, eval с грейдерами, полнота спеки.",
+                  ["adr-writer", "eval-generator", "spec-reviewer"], "research"),
+}
+
+# ключевые слова для эвристического фолбэка маршрутизации (если планировщик не назначил семью)
+_FAMILY_KW = {
+    "delivery": ["код", "тест", "реализ", "fastapi", "docker", "endpoint", "коммит", "напиши функц", "багфикс"],
+    "architect": ["архитектур", "дизайн", "схем", "rag", "память", "пайплайн", "модел", "sdd"],
+    "economics": ["стоимост", "экономик", "unit", "токен", "цена", "бюджет", "маржа", "roi"],
+    "critic": ["критик", "риск", "слаб", "дыр", "прожар", "сломает", "ревью спек", "полнот"],
+    "decisions": ["adr", "решени", "зафиксир", "eval", "грейдер", "acceptance", "критери"],
+    "discovery": ["icp", "боль", "jtbd", "рынок", "спрос", "ценност", "интервью", "идея", "аналог"],
+}
+
+
+def family_profile(fam_id: str) -> str:
+    fam = AGENT_FAMILIES.get(fam_id)
+    return fam[3] if fam else "research"
+
+
+def family_system(fam_id: str) -> str:
+    """System агента семьи: базовый агент-контракт + миссия семьи + инструкции её скиллов (reuse SKILLS)."""
+    fam = AGENT_FAMILIES.get(fam_id)
+    if not fam:
+        return _AGENT_SYS
+    title, mission, skill_ids, _prof = fam
+    return (_AGENT_SYS
+            + f"\n\n[Роль-семья: {title}] {mission}"
+            + "\n[Навыки семьи — применяй их подход]\n" + _skill_block(skill_ids)).strip()
+
+
+def route_family(task: str) -> str:
+    """Эвристический фолбэк: задача → семья по ключевым словам (если планировщик не назначил)."""
+    t = (task or "").lower()
+    for fam, words in _FAMILY_KW.items():
+        if any(w in t for w in words):
+            return fam
+    return "discovery"
+
+
+def cmd_families() -> None:
+    """Ростер Role Family агентов: какая семья какие скиллы переиспользует (read-only)."""
+    print(col("\n  Семьи агентов (Role Family → Skill) — прототип Agent Plane ABOP:", "cy"))
+    print(col("  Планировщик /agents сам назначает семью каждой задаче; специализированные "
+              "скиллы инжектятся только через свою семью.\n", "dim"))
+    for fid, (title, mission, skill_ids, prof) in AGENT_FAMILIES.items():
+        print(col(f"  🧩 {title} ({fid}) · профиль {prof}", "cy"))
+        print(col(f"     {mission}", "gray"))
+        chips = ", ".join(f"{s}{'*' if s in GLOBAL_SKILLS else ''}" for s in skill_ids)
+        print(col(f"     скиллы: {chips}", "dim"))
+    print(col("\n  * — скилл также глобальный (доступен в /skills для главного чата). "
+              "Глобальные: " + ", ".join(sorted(GLOBAL_SKILLS)) + "\n", "dim"))
 
 
 # ─────────────────────── команды ───────────────────────
@@ -1027,7 +1111,8 @@ _CMDS = [
     ("/agents", "мульти-агенты параллельно с tool-calling"),
     ("/board", "общая доска агентов (Blackboard)"),
     ("/data", "рецепты данных: источник→canonical JSON (Data Plane)"),
-    ("/skills", "скиллы: список, вкл/выкл"),
+    ("/skills", "глобальные скиллы CLI: список, вкл/выкл"),
+    ("/families", "семьи агентов (Role Family → Skill) — ростер"),
     ("/rag", "своя RAG-коллекция (search|index)"),
     ("/more", "раскрыть последний ответ полностью"),
     ("/save", "сохранить: /save <файл> (на комп) · /save cloud <имя> (в проект)"),
@@ -1205,9 +1290,11 @@ def _read_input(mode: str) -> str:
 
 
 def _skills_menu() -> None:
-    """Интерактивный список скиллов: ↑↓ выбор, Y вкл, N выкл, Enter/Space переключить, Q выход."""
-    names = sorted(SKILLS.keys())
+    """Интерактивный список ГЛОБАЛЬНЫХ скиллов CLI: ↑↓ выбор, Y вкл, N выкл, Enter переключить, Q выход.
+    Специализированные скиллы привязаны к семьям агентов — см. /families."""
+    names = sorted(GLOBAL_SKILLS & set(SKILLS.keys()))
     active = set(skills_active())
+    print(col("  (глобальные скиллы CLI; специализированные — в семьях, см. /families)", "dim"))
     getch = _mk_getch()
     if getch is None or not sys.stdin.isatty():  # fallback без raw-режима
         print(col("  Скиллы (переключай: /skills on <имя> | /skills off <имя>):", "bold"))
@@ -1370,6 +1457,8 @@ def _repl() -> None:
                         skills_set([]); print(col("  все скиллы выключены", "cy"))
                     else:
                         print(col("  /skills — меню · /skills on <имя> · /skills off <имя> · /skills clear", "gray"))
+                elif cmd in ("families", "family"):
+                    cmd_families()
                 elif cmd == "memory":
                     m = mem_load()
                     if m.get("summary"):
@@ -1768,9 +1857,48 @@ def _json_waves(text: str):
     return [[str(x) for x in data if str(x).strip()]]
 
 
-def _agent_run(idx: int, task: str, state: list, profile: str = "research", label: str = ""):
-    """ReAct-цикл одного агента с доступом к Blackboard. Пишет статус в state[idx]."""
+def _json_waves_fam(text: str):
+    """План с семьями: [[{"task","family"}...], ...]. Терпим к строкам и плоскому списку.
+    Невалидную/пропущенную семью до-маршрутизируем эвристикой (route_family)."""
+    a = text.find("["); b = text.rfind("]")
+    if a == -1 or b <= a:
+        return []
+    try:
+        data = json.loads(text[a:b + 1])
+    except Exception:
+        return []
+    if not data:
+        return []
+    waves = data if isinstance(data[0], list) else [data]
+    out = []
+    for w in waves:
+        items = []
+        for x in (w if isinstance(w, list) else [w]):
+            if isinstance(x, dict) and str(x.get("task", "")).strip():
+                fam = x.get("family", "")
+                items.append({"task": str(x["task"]),
+                              "family": fam if fam in AGENT_FAMILIES else route_family(str(x["task"]))})
+            elif isinstance(x, str) and x.strip():
+                items.append({"task": x, "family": route_family(x)})
+        if items:
+            out.append(items)
+    return out
+
+
+def _task_str(x) -> str:
+    return x["task"] if isinstance(x, dict) else str(x)
+
+
+def _fam_of(x) -> str:
+    return x.get("family", "") if isinstance(x, dict) else route_family(str(x))
+
+
+def _agent_run(idx: int, task: str, state: list, profile: str = "research", label: str = "", family: str = ""):
+    """ReAct-цикл одного агента с доступом к Blackboard. Пишет статус в state[idx].
+    family — семья Role Family: задаёт system (миссия+скиллы семьи) и профиль модели."""
     me = label or f"аг.{idx + 1}"
+    sys_prompt = family_system(family) if family in AGENT_FAMILIES else _AGENT_SYS
+    prof = family_profile(family) if family in AGENT_FAMILIES else profile
     board = bb_context()
     ctx = (f"\n\nОБЩАЯ ДОСКА (крошки от других/прошлых агентов — используй и дополняй "
            f"через bb_post/bb_read):\n{board}") if board else ""
@@ -1783,7 +1911,7 @@ def _agent_run(idx: int, task: str, state: list, profile: str = "research", labe
                   "Следующее действие — только JSON:")
         try:
             r = _mcp_call("chat", {"prompt": prompt, "session_id": _session_id(),
-                                   "profile": profile, "system": _AGENT_SYS, "max_tokens": 1500})
+                                   "profile": prof, "system": sys_prompt, "max_tokens": 1500})
         except BaseException:  # noqa: BLE001
             state[idx]["status"] = "ошибка сети"; return None
         txt = r.get("text", "")
@@ -1818,20 +1946,36 @@ def _agents_render(state, tick, first=False):
         mk = ("✓" if s["status"].startswith("готов") else "•") if done else fr
         gr = "" if not _ANSI else (C["green"] if s["status"].startswith("готов") else
                                    C["yellow"] if done else SPIN_RAMP[tick % len(SPIN_RAMP)])
-        line = f"  {gr}{mk}{C['off']} {C['dim']}[аг.{s['i']}]{C['off']} {s['task'][:w-40]}  {C['cy']}{s['status']}{C['off']}"
+        fam = AGENT_FAMILIES.get(s.get("family", ""))
+        ftag = f"{C['gray']}🧩{fam[0]}{C['off']} " if fam else ""
+        line = f"  {gr}{mk}{C['off']} {C['dim']}[аг.{s['i']}]{C['off']} {ftag}{s['task'][:w-52]}  {C['cy']}{s['status']}{C['off']}"
         sys.stdout.write("\r\033[K" + line[:w + 12] + "\n")
     sys.stdout.flush()
 
 
+def _wave_items(tasks: list) -> list:
+    """Нормализует волну: элемент = строка или {task, family} → [(task, family)] с авто-маршрутом."""
+    out = []
+    for it in tasks:
+        if isinstance(it, dict) and it.get("task"):
+            fam = it.get("family", "")
+            out.append((str(it["task"]), fam if fam in AGENT_FAMILIES else route_family(str(it["task"]))))
+        elif str(it).strip():
+            out.append((str(it), route_family(str(it))))
+    return out
+
+
 def _run_wave(wi: int, tasks: list) -> list:
     """Запускает одну волну: агенты параллельно, барьер в конце. Возвращает результаты."""
-    state = [{"i": i + 1, "task": t, "step": 0, "status": "ожидает"} for i, t in enumerate(tasks)]
-    results = [None] * len(tasks)
+    items = _wave_items(tasks)
+    state = [{"i": i + 1, "task": t, "family": f, "step": 0, "status": "ожидает"}
+             for i, (t, f) in enumerate(items)]
+    results = [None] * len(items)
 
     def run(i):
-        results[i] = _agent_run(i, tasks[i], state, label=f"в{wi}.{i + 1}")
+        results[i] = _agent_run(i, items[i][0], state, label=f"в{wi}.{i + 1}", family=items[i][1])
 
-    ths = [threading.Thread(target=run, args=(i,), daemon=True) for i in range(len(tasks))]
+    ths = [threading.Thread(target=run, args=(i,), daemon=True) for i in range(len(items))]
     _agents_render(state, 0, first=True)
     for t in ths:
         t.start()
@@ -1867,19 +2011,21 @@ def cmd_agents(goal: str) -> None:
                   "используй их (bb_read), не проси прислать файл.") if atts else ""
     _STOP.clear()
     print(col("  ⟳ планирую волны…", "dim"), file=sys.stderr)
+    fam_roster = "; ".join(f"{k} ({AGENT_FAMILIES[k][0]})" for k in AGENT_FAMILIES)
     try:
         pr = _mcp_call("chat", {
             "prompt": f"Составь план из 1–3 ВОЛН для параллельных агентов. Волна = список независимых "
             f"задач (выполняются параллельно); СЛЕДУЮЩАЯ волна видит результаты предыдущей на общей "
             f"доске. Типично: волна 1 — сбор/извлечение фактов (каждая задача пишет на доску через "
             f"bb_post), волна 2 — анализ/сравнение на основе доски (bb_read), опц. волна 3 — проверка. "
-            f"Всего не более {AGENT_MAX} задач в волне. Верни ТОЛЬКО JSON: массив волн, каждая — "
-            f"массив строк-задач.{files_hint}\n\nЦель: {goal}",
-            "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 700})
-        waves = _json_waves(pr.get("text", ""))
+            f"Всего не более {AGENT_MAX} задач в волне. КАЖДОЙ задаче назначь семью-исполнителя из "
+            f"ростера (по смыслу задачи): {fam_roster}. Верни ТОЛЬКО JSON: массив волн, каждая — массив "
+            f'объектов {{"task":"...","family":"<id семьи>"}}.{files_hint}\n\nЦель: {goal}',
+            "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 900})
+        waves = _json_waves_fam(pr.get("text", ""))
     except BaseException:  # noqa: BLE001
         waves = []
-    waves = [w[:AGENT_MAX] for w in waves if w][:3] or [[goal]]
+    waves = [w[:AGENT_MAX] for w in waves if w][:3] or [[{"task": goal, "family": route_family(goal)}]]
     bb_append({"type": "note", "text": f"ЦЕЛЬ: {goal}", "agent": "оркестратор"})
     print(col(f"  🧠 план: {len(waves)} волн(ы) · доска Blackboard активна (/board) · Esc — стоп", "dim"))
     all_res = []
@@ -1896,7 +2042,7 @@ def cmd_agents(goal: str) -> None:
         return
     print(col("  ⟳ синтезирую итог из доски и результатов волн…", "dim"), file=sys.stderr)
     joined = "\n\n".join(
-        f"### Волна {wi}, задача {i+1}: {w[i]}\n{r[i] or '(нет результата)'}"
+        f"### Волна {wi}, задача {i+1} [{AGENT_FAMILIES.get(_fam_of(w[i]), ('—',))[0]}]: {_task_str(w[i])}\n{r[i] or '(нет результата)'}"
         for wi, (w, r) in enumerate(all_res, 1) for i in range(len(w)))
     board = bb_context()
     _chat("research", f"Собери единый связный итог по цели «{goal}». Опирайся на факты с доски и "
