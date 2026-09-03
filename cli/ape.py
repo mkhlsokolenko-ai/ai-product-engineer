@@ -540,6 +540,14 @@ SKILL_SAFETY = {
     "adr-writer": {"mode": "write", "egress": "internal", "cite": False},
     "process-map": {"mode": "write", "egress": "internal", "cite": True},
     "c4-diagram": {"mode": "write", "egress": "internal", "cite": False},
+    # ── инженерные/ресёрч (синхронно с доработанными телами) ──
+    "conventional-commits": {"mode": "action", "egress": "external", "cite": False},   # git-мутации → HITL
+    "memory-architect": {"mode": "write", "egress": "internal", "cite": False},        # ПДн/retention в памяти
+    "eval-generator": {"mode": "write", "egress": "internal", "cite": True},           # кейсы/пороги из источника
+    "mlsdd-writer": {"mode": "write", "egress": "internal", "cite": False},
+    "test-writer": {"mode": "write", "egress": "internal", "cite": False},
+    "icp-interviewer": {"mode": "read", "egress": "internal", "cite": True},           # не выдумывать «за ICP»
+    "devils-advocate": {"mode": "read", "egress": "internal", "cite": True},           # критика на фактах
 }
 
 
@@ -612,31 +620,28 @@ AGENT_FAMILIES = {
             "comms": ("Коммуникации", ["email-draft", "status-report", "weekly-update"]),
         },
     },
-    # ═══ Инженерные семьи APE (полигон студентов курса) ═══
-    "discovery": {
-        "title": "Дискавери", "profile": "research",
-        "mission": "Проверяй ценность и спрос: чью боль и как сильно решаем, кто и почему платит.",
-        "members": {"default": ("Дискавери", ["icp-interviewer", "jtbd-formulator", "researcher", "idea-scorer", "idea-selector"])},
+    # ═══ Ресёрч и инженерные семьи (структурированы по ролям, как бизнес) ═══
+    "research": {
+        "title": "Ресёрч", "profile": "research",
+        "mission": "Добывай знание до решения: рынок и клиент, спрос и ценность, выбор идеи — каждый факт с источником.",
+        "members": {
+            "web-scout": ("Веб-ресёрчер", ["researcher", "market-research"]),
+            "discovery": ("Дискавери (клиент/спрос)", ["icp-interviewer", "jtbd-formulator", "idea-scorer", "idea-selector"]),
+        },
     },
-    "eng-architect": {
-        "title": "Инж-архитектор", "profile": "research",
-        "mission": "Проектируй КАК строить агента: архитектура под задачу, RAG/память, дизайн агента.",
-        "members": {"default": ("Инж-архитектор", ["architecture-chooser", "agent-design-writer", "mlsdd-writer", "rag-architect", "memory-architect"])},
+    "engineering": {
+        "title": "Инженер", "profile": "code",
+        "mission": "Доводи до кода: проектируй агента и систему, пиши тесты и реализацию по best practices, чистые коммиты.",
+        "members": {
+            "backend": ("Бэкенд-инженер", ["fastapi-patterns", "test-writer", "conventional-commits"]),
+            "platform": ("Платформенный инженер", ["docker-patterns"]),
+            "agent-builder": ("Инженер агентов", ["architecture-chooser", "agent-design-writer", "rag-architect", "memory-architect", "mlsdd-writer"]),
+        },
     },
     "critic": {
         "title": "Критик", "profile": "research",
         "mission": "Ищи, где сломается: атакуй решение, дожимай до цифр и критериев, находи дыры в спеке.",
         "members": {"default": ("Критик", ["devils-advocate", "grill-me", "spec-reviewer"])},
-    },
-    "economics": {
-        "title": "Экономика", "profile": "research",
-        "mission": "Проверяй, сходится ли: unit-экономика и стоимость по токенам до масштабирования.",
-        "members": {"default": ("Экономика", ["cost-estimator", "unit-economics-checker"])},
-    },
-    "delivery": {
-        "title": "Инженер", "profile": "code",
-        "mission": "Доводи до кода: сначала тесты, затем реализация по best practices (FastAPI/Docker), чистые коммиты.",
-        "members": {"default": ("Инженер", ["test-writer", "fastapi-patterns", "docker-patterns", "conventional-commits"])},
     },
     "decisions": {
         "title": "Решения", "profile": "research",
@@ -647,14 +652,14 @@ AGENT_FAMILIES = {
 
 # ключевые слова для эвристического фолбэка маршрутизации (если планировщик не назначил семью)
 _FAMILY_KW = {
-    "finance": ["dcf", "оценк", "выручк", "p&l", "прибыл", "бюджет", "прогноз фин", "казнач", "отчётност", "фин-модел", "три отчёт"],
-    "analytics": ["аналит", "метрик", "дашборд", "воронк", "процесс", "требован", "рынок", "данны", "cohort", "когорт", "unit"],
+    "finance": ["dcf", "оценк", "выручк", "p&l", "прибыл", "бюджет", "прогноз фин", "казнач", "отчётност", "фин-модел", "три отчёт", "unit"],
+    "analytics": ["аналит", "метрик", "дашборд", "воронк", "процесс", "требован", "данны", "cohort", "когорт"],
     "management": ["задач", "тикет", "статус", "письм", "email", "встреч", "митинг", "трекер", "jira", "отчёт по проект", "напоминан"],
-    "architecture": ["архитектур", "схем", "c4", "диаграмм", "api", "контракт", "rag", "память", "sdd", "vllm"],
-    "delivery": ["код", "тест", "реализ", "fastapi", "docker", "endpoint", "коммит", "напиши функц", "багфикс"],
+    "architecture": ["архитектур", "схем", "c4", "диаграмм", "api-дизайн", "api design", "контракт", "sdd", "vllm", "erd"],
+    "engineering": ["код", "тест", "реализ", "fastapi", "docker", "endpoint", "коммит", "напиши функц", "багфикс", "rag", "память агент"],
+    "research": ["icp", "боль клиент", "jtbd", "спрос", "ценност", "интервью", "идея", "аналог", "рынок", "конкурент", "ресёрч"],
     "critic": ["критик", "риск", "слаб", "дыр", "прожар", "сломает", "ревью спек"],
     "decisions": ["adr", "зафиксир решени", "грейдер", "acceptance"],
-    "discovery": ["icp", "боль клиент", "jtbd", "спрос", "ценност", "интервью", "идея", "аналог"],
 }
 
 

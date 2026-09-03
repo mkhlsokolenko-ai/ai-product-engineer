@@ -1,24 +1,26 @@
 ---
 name: docker-patterns
-description: Yerel geliştirme, konteyner güvenliği, ağ, volume stratejileri ve multi-servis orkestrasyon için Docker ve Docker Compose kalıpları.
+description: Паттерны Docker и Docker Compose для локальной разработки, безопасности контейнеров, сети, стратегий volume и оркестрации нескольких сервисов.
 origin: ECC
 ---
 
-# Docker Kalıpları
+# Docker-паттерны
 
-Konteynerize edilmiş geliştirme için Docker ve Docker Compose en iyi uygulamaları.
+Ты применяешь лучшие практики Docker и Docker Compose для контейнеризованной разработки: раскладка Compose, multi-stage сборки, сеть, volume, безопасность контейнеров и отладка. Цель — воспроизводимые сборки, минимальный и non-root образ, без секретов внутри слоёв.
 
-## Ne Zaman Aktifleştirmeli
+## Когда применять
 
-- Yerel geliştirme için Docker Compose kurarken
-- Çok konteynerli mimariler tasarlarken
-- Konteyner ağ veya volume sorunlarını giderirken
-- Dockerfile'ları güvenlik ve boyut için incelerken
-- Yerel geliştirmeden konteynerize iş akışına geçerken
+- Настраиваешь Docker Compose для локальной разработки.
+- Проектируешь архитектуру из нескольких контейнеров.
+- Разбираешь проблемы сети или volume контейнеров.
+- Ревьюишь Dockerfile на безопасность и размер.
+- Переходишь от локальной разработки к контейнеризованному рабочему потоку.
 
-## Yerel Geliştirme için Docker Compose
+## Метод
 
-### Standart Web Uygulaması Stack'i
+### Docker Compose для локальной разработки
+
+#### Стандартный стек веб-приложения
 
 ```yaml
 # docker-compose.yml
@@ -26,12 +28,12 @@ services:
   app:
     build:
       context: .
-      target: dev                     # Multi-stage Dockerfile'ın dev aşamasını kullan
+      target: dev                     # Использует стадию dev из multi-stage Dockerfile
     ports:
       - "3000:3000"
     volumes:
-      - .:/app                        # Hot reload için bind mount
-      - /app/node_modules             # Anonim volume -- konteyner bağımlılıklarını korur
+      - .:/app                        # Bind mount для hot reload
+      - /app/node_modules             # Анонимный volume — сохраняет зависимости контейнера
     environment:
       - DATABASE_URL=postgres://postgres:postgres@db:5432/app_dev
       - REDIS_URL=redis://redis:6379/0
@@ -67,7 +69,7 @@ services:
     volumes:
       - redisdata:/data
 
-  mailpit:                            # Yerel email testi
+  mailpit:                            # Локальное тестирование email
     image: axllent/mailpit
     ports:
       - "8025:8025"                   # Web UI
@@ -78,16 +80,16 @@ volumes:
   redisdata:
 ```
 
-### Geliştirme vs Üretim Dockerfile
+#### Dockerfile для разработки vs продакшена
 
 ```dockerfile
-# Aşama: bağımlılıklar
+# Стадия: зависимости
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Aşama: dev (hot reload, debug araçları)
+# Стадия: dev (hot reload, инструменты отладки)
 FROM node:22-alpine AS dev
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -95,14 +97,14 @@ COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "dev"]
 
-# Aşama: build
+# Стадия: build
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build && npm prune --production
 
-# Aşama: production (minimal image)
+# Стадия: production (минимальный образ)
 FROM node:22-alpine AS production
 WORKDIR /app
 RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001
@@ -116,10 +118,10 @@ HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/heal
 CMD ["node", "dist/server.js"]
 ```
 
-### Override Dosyaları
+#### Override-файлы
 
 ```yaml
-# docker-compose.override.yml (otomatik yüklenir, sadece dev ayarları)
+# docker-compose.override.yml (загружается автоматически, только dev-настройки)
 services:
   app:
     environment:
@@ -128,7 +130,7 @@ services:
     ports:
       - "9229:9229"                   # Node.js debugger
 
-# docker-compose.prod.yml (üretim için açıkça)
+# docker-compose.prod.yml (для продакшена — явно)
 services:
   app:
     build:
@@ -142,25 +144,25 @@ services:
 ```
 
 ```bash
-# Geliştirme (override'ı otomatik yükler)
+# Разработка (override загружается автоматически)
 docker compose up
 
-# Üretim
+# Продакшен
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-## Ağ (Networking)
+### Сеть (Networking)
 
-### Servis Keşfi
+#### Обнаружение сервисов
 
-Aynı Compose ağındaki servisler servis adıyla çözümlenir:
+Сервисы в одной Compose-сети резолвятся по имени сервиса:
 ```
-# "app" konteynerinden:
-postgres://postgres:postgres@db:5432/app_dev    # "db" db konteynerine çözümlenir
-redis://redis:6379/0                             # "redis" redis konteynerine çözümlenir
+# Из контейнера "app":
+postgres://postgres:postgres@db:5432/app_dev    # "db" резолвится в контейнер db
+redis://redis:6379/0                             # "redis" резолвится в контейнер redis
 ```
 
-### Özel Ağlar
+#### Собственные сети
 
 ```yaml
 services:
@@ -175,71 +177,71 @@ services:
 
   db:
     networks:
-      - backend-net              # Sadece api'den erişilebilir, frontend'den değil
+      - backend-net              # Доступен только из api, не из frontend
 
 networks:
   frontend-net:
   backend-net:
 ```
 
-### Sadece Gereklileri Açığa Çıkarma
+#### Открывать только необходимое
 
 ```yaml
 services:
   db:
     ports:
-      - "127.0.0.1:5432:5432"   # Sadece host'tan erişilebilir, ağdan değil
-    # Üretimde port'ları tamamen çıkar -- sadece Docker ağı içinden erişilebilir
+      - "127.0.0.1:5432:5432"   # Доступен только с host, не из сети
+    # В продакшене убери порты полностью — доступ только внутри Docker-сети
 ```
 
-## Volume Stratejileri
+### Стратегии volume
 
 ```yaml
 volumes:
-  # İsimli volume: konteyner yeniden başlatmalarında kalıcı, Docker tarafından yönetilir
+  # Именованный volume: переживает перезапуск контейнера, управляется Docker
   pgdata:
 
-  # Bind mount: host dizinini konteynere eşler (geliştirme için)
+  # Bind mount: маппит директорию host в контейнер (для разработки)
   # - ./src:/app/src
 
-  # Anonim volume: bind mount override'ından konteyner tarafından oluşturulan içeriği korur
+  # Анонимный volume: сохраняет созданный контейнером контент от override bind mount
   # - /app/node_modules
 ```
 
-### Yaygın Kalıplar
+#### Частые паттерны
 
 ```yaml
 services:
   app:
     volumes:
-      - .:/app                   # Kaynak kodu (hot reload için bind mount)
-      - /app/node_modules        # Konteyner'ın node_modules'ünü host'tan koru
-      - /app/.next               # Build cache'ini koru
+      - .:/app                   # Исходный код (bind mount для hot reload)
+      - /app/node_modules        # Защитить node_modules контейнера от host
+      - /app/.next               # Сохранить build cache
 
   db:
     volumes:
-      - pgdata:/var/lib/postgresql/data          # Kalıcı veri
-      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql  # Init scriptleri
+      - pgdata:/var/lib/postgresql/data          # Постоянные данные
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql  # Init-скрипты
 ```
 
-## Konteyner Güvenliği
+### Безопасность контейнеров
 
-### Dockerfile Sıkılaştırma
+#### Ужесточение Dockerfile
 
 ```dockerfile
-# 1. Belirli tag'ler kullanın (:latest asla)
+# 1. Используйте конкретные теги (:latest — никогда)
 FROM node:22.12-alpine3.20
 
-# 2. Root olmayan kullanıcı olarak çalıştır
+# 2. Запуск от non-root пользователя
 RUN addgroup -g 1001 -S app && adduser -S app -u 1001
 USER app
 
-# 3. Capability'leri düşür (compose'da)
-# 4. Mümkün olduğunda salt okunur kök dosya sistemi
-# 5. Image layer'larında secret yok
+# 3. Сбросить capabilities (в compose)
+# 4. По возможности — read-only корневая файловая система
+# 5. Никаких секретов в слоях образа
 ```
 
-### Compose Güvenliği
+#### Безопасность Compose
 
 ```yaml
 services:
@@ -253,21 +255,21 @@ services:
     cap_drop:
       - ALL
     cap_add:
-      - NET_BIND_SERVICE          # Sadece < 1024 port'lara bind için
+      - NET_BIND_SERVICE          # Только для bind на порты < 1024
 ```
 
-### Secret Yönetimi
+#### Управление секретами
 
 ```yaml
-# İYİ: Ortam değişkenleri kullanın (runtime'da enjekte edilir)
+# ХОРОШО: используйте переменные окружения (инжектятся в runtime)
 services:
   app:
     env_file:
-      - .env                     # .env'i asla git'e commit etmeyin
+      - .env                     # .env никогда не коммитить в git
     environment:
-      - API_KEY                  # Host ortamından miras alır
+      - API_KEY                  # Наследуется из окружения host
 
-# İYİ: Docker secrets (Swarm modu)
+# ХОРОШО: Docker secrets (режим Swarm)
 secrets:
   db_password:
     file: ./secrets/db_password.txt
@@ -277,11 +279,11 @@ services:
     secrets:
       - db_password
 
-# KÖTÜ: Image'de hardcode
-# ENV API_KEY=sk-proj-xxxxx      # ASLA BUNU YAPMAYIN
+# ПЛОХО: хардкод в образе
+# ENV API_KEY=sk-proj-xxxxx      # НИКОГДА ТАК НЕ ДЕЛАЙТЕ
 ```
 
-## .dockerignore
+### .dockerignore
 
 ```
 node_modules
@@ -299,66 +301,74 @@ README.md
 tests/
 ```
 
-## Hata Ayıklama
+### Отладка
 
-### Yaygın Komutlar
+#### Частые команды
 
 ```bash
-# Logları görüntüle
-docker compose logs -f app           # App loglarını takip et
-docker compose logs --tail=50 db     # db'den son 50 satır
+# Просмотр логов
+docker compose logs -f app           # Следить за логами app
+docker compose logs --tail=50 db     # Последние 50 строк из db
 
-# Çalışan konteynerde komut çalıştır
-docker compose exec app sh           # app'e shell ile gir
-docker compose exec db psql -U postgres  # postgres'e bağlan
+# Выполнить команду в работающем контейнере
+docker compose exec app sh           # Войти в app через shell
+docker compose exec db psql -U postgres  # Подключиться к postgres
 
-# İncele
-docker compose ps                     # Çalışan servisler
-docker compose top                    # Her konteynerdeki işlemler
-docker stats                          # Kaynak kullanımı
+# Инспекция
+docker compose ps                     # Работающие сервисы
+docker compose top                    # Процессы в каждом контейнере
+docker stats                          # Использование ресурсов
 
-# Yeniden build et
-docker compose up --build             # Image'leri yeniden build et
-docker compose build --no-cache app   # Tam rebuild'i zorla
+# Пересборка
+docker compose up --build             # Пересобрать образы
+docker compose build --no-cache app   # Форсировать полную пересборку
 
-# Temizle
-docker compose down                   # Konteynerleri durdur ve kaldır
-docker compose down -v                # Volume'leri de kaldır (YIKıCı)
-docker system prune                   # Kullanılmayan image/konteynerleri kaldır
+# Очистка
+docker compose down                   # Остановить и удалить контейнеры
+docker compose down -v                # Удалить и volume (РАЗРУШИТЕЛЬНО)
+docker system prune                   # Удалить неиспользуемые образы/контейнеры
 ```
 
-### Ağ Sorunlarını Hata Ayıklama
+#### Отладка проблем сети
 
 ```bash
-# Konteyner içinde DNS çözümlemesini kontrol et
+# Проверить разрешение DNS внутри контейнера
 docker compose exec app nslookup db
 
-# Bağlantıyı kontrol et
+# Проверить связность
 docker compose exec app wget -qO- http://api:3000/health
 
-# Ağı incele
+# Инспекция сети
 docker network ls
 docker network inspect <project>_default
 ```
 
-## Anti-Kalıplar
+## Definition of Done
+- [ ] Образ multi-stage: финальная стадия минимальна, dev-инструменты/исходники в неё не попадают.
+- [ ] Контейнер запускается от **non-root** пользователя (`USER`), а не от root.
+- [ ] Теги образов зафиксированы (конкретная версия), `:latest` не используется.
+- [ ] Capabilities сброшены (`cap_drop: [ALL]`), добавлены только необходимые; `no-new-privileges:true`.
+- [ ] По возможности `read_only: true` + `tmpfs` для записываемых путей.
+- [ ] Секретов нет в слоях образа: только переменные окружения / Docker secrets; `.env` в `.dockerignore` и не в git.
+- [ ] Постоянные данные — на именованных volume; порты наружу открыты только необходимые (в проде — минимум).
+- [ ] Есть `HEALTHCHECK`; зависимости через `depends_on` с `condition`.
 
-```
-# KÖTÜ: Üretimde orkestrasyon olmadan docker compose kullanma
-# Üretim çok konteynerli iş yükleri için Kubernetes, ECS veya Docker Swarm kullanın
+## Анти-паттерны
+- Docker Compose в продакшене без оркестрации — для прод-нагрузок бери Kubernetes, ECS или Docker Swarm.
+- Хранение данных в контейнере без volume — контейнеры эфемерны, данные теряются при перезапуске.
+- Запуск от root вместо выделенного non-root пользователя.
+- Тег `:latest` вместо фиксированной версии — сборка невоспроизводима.
+- Один «dev-контейнер» со всеми сервисами — разделяй ответственность: один процесс на контейнер.
+- Секреты в `docker-compose.yml` вместо `.env` (gitignore) или Docker secrets.
 
-# KÖTÜ: Volume olmadan konteynerlerde veri depolama
-# Konteynerler geçicidir -- volume olmadan yeniden başlatmada tüm veri kaybolur
+## Безопасность
+- `mode=read`, `egress=internal`, `cite=False`.
+- Навык проектирует/ревьюит контейнерную конфигурацию внутри периметра, наружу сам не ходит.
+- **Non-root:** каждый образ запускается от выделенного непривилегированного пользователя.
+- **Минимум capabilities:** `cap_drop: [ALL]` + только необходимые `cap_add`; `no-new-privileges`; read-only FS где возможно.
+- **Секреты не в образ:** ключи и пароли не попадают в слои/`ENV` Dockerfile — только runtime-инъекция через env/Docker secrets; `.env` в `.dockerignore`.
 
-# KÖTÜ: Root olarak çalıştırma
-# Daima root olmayan bir kullanıcı oluşturun ve kullanın
-
-# KÖTÜ: :latest tag kullanma
-# Yeniden üretilebilir build'ler için belirli versiyonlara sabitle
-
-# KÖTÜ: Tüm servisleri içeren tek dev konteyner
-# Endişeleri ayırın: konteyner başına bir işlem
-
-# KÖTÜ: Secret'ları docker-compose.yml'e koymak
-# .env dosyaları (gitignore'lanmış) veya Docker secrets kullanın
-```
+## Интеграция
+- `data_query`: на входе сверься с существующей инфраструктурой/контрактами сервисов (порты, сети, имена), чтобы Compose был консистентен.
+- `remember(criticality)`: пометь критичность контейнеров с egress-доступом или монтированием чувствительных данных — вход для гейта конверта.
+- `handoff`: границы сервисов получай из `c4-diagram`; секретами и их хранилищем — согласуйся с ИБ-навыком; код приложения — из `fastapi-patterns`.
