@@ -1284,7 +1284,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/mode{C['off']} code|ask   сменить режим по умолчанию (для текста без /)
     {C['cy']}/agents{C['off']} <цель>   несколько агентов ПАРАЛЛЕЛЬНО с tool-calling (Esc — стоп)
     {C['cy']}/board{C['off']}           доска агентов · {C['cy']}post{C['off']} <текст> · {C['cy']}compact{C['off']} · {C['cy']}clear{C['off']}
-    {C['cy']}/data{C['off']}            Data Plane: {C['cy']}recipes{C['off']} · {C['cy']}new{C['off']} <имя> · {C['cy']}run{C['off']} <имя> · {C['cy']}query{C['off']} <entity> [k=v]
+    {C['cy']}/data{C['off']}            Data Plane: {C['cy']}recipes{C['off']} · {C['cy']}new{C['off']} <имя> · {C['cy']}run{C['off']} <имя> · {C['cy']}query{C['off']} <entity> [k=v] · {C['cy']}schema{C['off']} · {C['cy']}sources{C['off']}
     {C['cy']}/skills{C['off']}          список скиллов, вкл/выкл (Y/N), активные видны при ответах
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
@@ -1652,9 +1652,9 @@ def _repl() -> None:
                         print(col(f"  Шаблон рецепта создан: {fp}\n  Отредактируй source/map/rules и: /data run {sp[1]}", "cy"))
                     elif sub == "run" and len(sp) > 1:
                         try:
-                            ent, n, dr = data_run(sp[1])
-                            print(col(f"  Рецепт «{sp[1]}» → {n} записей в «{ent}» (отброшено {dr}). "
-                                      f"Проверить: /data query {ent}", "cy"))
+                            ent, n, dr, inv = data_run(sp[1])
+                            print(col(f"  Рецепт «{sp[1]}» → {n} записей в «{ent}» (отброшено правилами {dr}, "
+                                      f"невалидно по схеме {inv}). Проверить: /data query {ent}", "cy"))
                         except Exception as e:  # noqa: BLE001
                             print(col(f"  Ошибка рецепта: {e}", "yellow"))
                     elif sub == "query" and len(sp) > 1:
@@ -1663,11 +1663,15 @@ def _repl() -> None:
                             if "=" in kv:
                                 k, v = kv.split("=", 1); flt[k] = v
                         recs = data_query(sp[1], flt or None)
-                        print(col(f"  {len(recs)} записей в «{sp[1]}»:", "dim"))
+                        print(col(f"  {len(recs)} свежих записей в «{sp[1]}»:", "dim"))
                         for r in recs[:10]:
                             print("  " + json.dumps({k: v for k, v in r.items() if k != "provenance"}, ensure_ascii=False)[:200])
+                    elif sub == "schema" and len(sp) > 1:
+                        print(col("  " + json.dumps(data_schema(sp[1]), ensure_ascii=False), "cy"))
+                    elif sub == "sources":
+                        print(col("  Подключённые источники (адаптеры): " + ", ".join(sorted(SOURCE_ADAPTERS)), "cy"))
                     else:
-                        print(col("  /data recipes · /data new <имя> · /data run <имя> · /data query <entity> [k=v]", "gray"))
+                        print(col("  /data recipes · new <имя> · run <имя> · query <entity> [k=v] · schema <entity> · sources", "gray"))
                 elif cmd == "rag":
                     sp = rest.split(maxsplit=1)
                     if sp and sp[0] == "search" and len(sp) > 1:
@@ -1880,9 +1884,62 @@ def bb_compact() -> int:
     return n
 
 
-# ═══════════════ DATA PLANE — декларативные рецепты данных (источник → canonical JSON) ═══════════════
-# Data Recipe пишет ЧЕЛОВЕК (no-code JSON): source → map → rules → emit. Движок применяет и кладёт
-# канонические записи в append-only store (dedup по id на чтении). Агент читает через data_query.
+# ═══════════════ DATA PLANE — агент-нативный слой данных (источник → canonical JSON) ═══════════════
+# Три компонента (ABOP_ARD §3): Source Adapter (источник→строки) → Canonical Schema (типизированная
+# сущность) → Data Contract (что агент получит). Data Recipe пишет ЧЕЛОВЕК (no-code JSON): source →
+# map → rules → emit. Движок применяет, валидирует против canonical-схемы, кладёт в append-only store
+# с provenance/freshness. Агент читает ТОЛЬКО через data_query/data_get (протухшее не отдаётся).
+
+# ── Реестр адаптеров источников — РАСШИРЯЕМЫЙ (подключаемые тулзы регистрируют новые виды, см. #9) ──
+SOURCE_ADAPTERS = {}   # kind -> fn(src_spec: dict) -> list[dict] (сырые строки источника)
+
+
+def register_adapter(kind: str, fn) -> None:
+    """Подключить источник к Data Plane. fn(src)->rows. Так добавляются коннекторы (mail/db/api/web)."""
+    SOURCE_ADAPTERS[kind] = fn
+
+
+def _adapter_csv(src: dict) -> list:
+    import csv
+    with open(os.path.expanduser(src["path"]), encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def _adapter_json(src: dict) -> list:
+    with open(os.path.expanduser(src["path"]), encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else data.get(src.get("root", "items"), [])
+
+
+register_adapter("csv", _adapter_csv)
+register_adapter("json", _adapter_json)
+
+# ── Реестр canonical-схем (Canonical Schema): обязательные поля сущности. Расширяется вертикалями. ──
+CANONICAL_SCHEMAS = {
+    "email":       {"required": ["id", "from", "subject"], "hint": "письмо: from/subject/received_at/body"},
+    "transaction": {"required": ["id", "amount"],          "hint": "транзакция: amount/date/customer"},
+    "customer":    {"required": ["id"],                    "hint": "клиент: name/email/segment"},
+    "issue":       {"required": ["id", "title"],           "hint": "тикет: title/status/assignee"},
+    "document":    {"required": ["id"],                    "hint": "документ: kind/title/text"},
+    "meeting":     {"required": ["id"],                    "hint": "встреча: attendees/decisions/actions"},
+}
+
+
+def data_schema(entity: str) -> dict:
+    """Data Contract: описание сущности (обязательные поля + подсказка). Агент берёт данные по контракту."""
+    sc = CANONICAL_SCHEMAS.get(entity)
+    if sc:
+        return {"entity": entity, "known": True, **sc}
+    return {"entity": entity, "known": False, "required": ["id"], "hint": "произвольная сущность (нет в реестре схем)"}
+
+
+def _validate_canonical(entity: str, rec: dict) -> list:
+    """Проверка записи против canonical-схемы: какие обязательные поля пусты. Пусто → запись невалидна."""
+    sc = CANONICAL_SCHEMAS.get(entity)
+    if not sc:
+        return []
+    return [f for f in sc.get("required", []) if not str(rec.get(f, "")).strip()]
+
 
 def _recipes_dir() -> str:
     d = os.path.join(CFG_DIR, "recipes"); os.makedirs(d, exist_ok=True); return d
@@ -1926,6 +1983,10 @@ def _map_field(spec, row):
         return row.get(spec, "")
     if "const" in spec:
         return spec["const"]
+    if "lookup" in spec:                                   # связь сущностей (refs): найти в другой сущности
+        key = row.get(spec.get("by_col", spec.get("col", "")), "")
+        hits = data_query(spec["lookup"], {spec.get("match", "id"): key}, limit=1)
+        return (hits[0].get(spec.get("take", "id")) if hits else "")
     val = row.get(spec.get("col", ""), "")
     return _cast(val, spec["cast"]) if spec.get("cast") else val
 
@@ -1957,22 +2018,17 @@ def _mask(v):
 
 
 def data_run(name: str) -> tuple:
-    """Применяет рецепт: читает источник, маппит, валидирует, пишет canonical в store."""
+    """Применяет рецепт: адаптер источника → map/lookup → rules → валидация схемы → canonical store.
+    Возвращает (entity, записано, отброшено, невалидно)."""
     r = data_load_recipe(name)
     src = r.get("source", {}); entity = r["entity"]; emit = r.get("emit", {})
-    rows = []
-    if src.get("kind") == "csv":
-        import csv
-        p = os.path.expanduser(src["path"])
-        with open(p, encoding="utf-8-sig", newline="") as f:
-            rows = list(csv.DictReader(f))
-    elif src.get("kind") == "json":
-        with open(os.path.expanduser(src["path"]), encoding="utf-8") as f:
-            data = json.load(f); rows = data if isinstance(data, list) else data.get(src.get("root", "items"), [])
-    else:
-        raise ValueError(f"источник {src.get('kind')} не поддержан (MVP: csv|json)")
+    kind = src.get("kind")
+    adapter = SOURCE_ADAPTERS.get(kind)
+    if adapter is None:
+        raise ValueError(f"источник «{kind}» не подключён (есть: {', '.join(sorted(SOURCE_ADAPTERS)) or '—'})")
+    rows = adapter(src)
     mp = r.get("map", {}); rules = r.get("rules", [])
-    out = []; dropped = 0
+    out = []; dropped = 0; invalid = 0
     for i, row in enumerate(rows):
         rec = {k: _map_field(spec, row) for k, spec in mp.items()}
         ok = True
@@ -1985,34 +2041,56 @@ def data_run(name: str) -> tuple:
                         rec[fld] = _mask(rec[fld])
         if not ok:
             dropped += 1; continue
+        missing = _validate_canonical(entity, rec)         # гейт canonical-схемы: обязательные поля
+        if missing:
+            invalid += 1; continue
         rec.update({"schema": emit.get("schema", entity),
                     "schema_version": emit.get("schema_version", "1.0"),
-                    "provenance": {"recipe": name, "source": f"{src.get('kind')}:{src.get('path', src.get('ref',''))}",
+                    "provenance": {"recipe": name, "source": f"{kind}:{src.get('path', src.get('ref', ''))}",
                                    "row": i, "fetched_at": time.time()},
                     "ttl_sec": emit.get("ttl_sec", 86400)})
         out.append(rec)
     with open(_data_path(entity), "a", encoding="utf-8") as f:  # append-only canonical store
         for rec in out:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return entity, len(out), dropped
+    return entity, len(out), dropped, invalid
 
 
-def data_query(entity: str, filters: dict = None, fields: list = None, limit: int = 50) -> list:
-    """Чтение canonical store: dedup по id (последний), фильтр по точному совпадению, проекция."""
+def _fresh(rec: dict, now: float) -> bool:
+    """Freshness-гейт: запись не протухла (fetched_at + ttl_sec ≥ now). ttl_sec=0 → вечная."""
+    ttl = rec.get("ttl_sec", 0)
+    if not ttl:
+        return True
+    return float(rec.get("provenance", {}).get("fetched_at", now)) + float(ttl) >= now
+
+
+def data_query(entity: str, filters: dict = None, fields: list = None, limit: int = 50,
+               include_stale: bool = False) -> list:
+    """Чтение canonical store: dedup по id (последний), FRESHNESS-фильтр (протухшее не отдаётся),
+    фильтр по точному совпадению, проекция. Агент работает только на свежих данных."""
     try:
         with open(_data_path(entity), encoding="utf-8") as f:
             recs = [json.loads(x) for x in f if x.strip()]
     except FileNotFoundError:
         return []
+    now = time.time()
     seen = {}
     for r in recs:
         seen[r.get("id", id(r))] = r          # dedup: последняя запись по id
     res = list(seen.values())
+    if not include_stale:
+        res = [r for r in res if _fresh(r, now)]           # протухшее по ttl не отдаём
     for k, v in (filters or {}).items():
         res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
     if fields:
         res = [{k: r.get(k) for k in fields} for r in res]
     return res[:limit]
+
+
+def data_get(entity: str, rec_id: str, include_stale: bool = False) -> dict | None:
+    """Одна каноническая запись по id (Data Contract data_get). Протухшую не отдаёт."""
+    hits = data_query(entity, {"id": rec_id}, limit=1, include_stale=include_stale)
+    return hits[0] if hits else None
 
 
 def _t_rag(a):
@@ -2202,7 +2280,11 @@ AGENT_TOOLS = {
         data_query(a.get("entity", ""), a.get("filter") if isinstance(a.get("filter"), dict) else None,
                    a.get("fields") if isinstance(a.get("fields"), list) else None,
                    int(a.get("limit", 30))), ensure_ascii=False)[:4000] or "[]",
-        'взять машиночитаемые данные из Data Plane — args: {"entity":"...","filter":{...},"fields":[...]}'),
+        'взять машиночитаемые данные из Data Plane (только свежие) — args: {"entity":"...","filter":{...},"fields":[...]}'),
+    "data_get": (lambda a: json.dumps(data_get(a.get("entity", ""), str(a.get("id", ""))), ensure_ascii=False)[:4000] or "null",
+                 'одна каноническая запись по id — args: {"entity":"...","id":"..."}'),
+    "data_schema": (lambda a: json.dumps(data_schema(a.get("entity", "")), ensure_ascii=False),
+                    'Data Contract сущности (обязательные поля) — args: {"entity":"..."}'),
 }
 
 _AGENT_SYS = (
