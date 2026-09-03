@@ -642,10 +642,13 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         {"key": "mvp", "title": "MVP", "icon": "🚢", "earned": earned("MVP")},
         {"key": "defense", "title": "Защита", "icon": "🏆", "earned": earned("ащит")},
     ]
+    total_lec = len(lecs)
+    passed_lec = sum(1 for r in lecs if (r[6] or "planned") == "passed")
     return {
         "student": claims.get("preferred_username", "студент"),
         "week": week, "weeks": settings.course_weeks,
-        "progress_pct": round(100 * week / settings.course_weeks) if week else 0,
+        "lectures_done": passed_lec, "lectures_total": total_lec,
+        "progress_pct": round(100 * passed_lec / total_lec) if total_lec else 0,
         "current_lecture": cur_lec, "next_deadline": nd,
         "onboarding": onboarding, "achievements": ach,
         "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat(),
