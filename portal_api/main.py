@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from minio import Minio
 from pydantic import BaseModel
@@ -865,6 +866,17 @@ async def material_upload_direct(file: UploadFile = File(...), claims: dict = De
 async def del_material(filename: str, claims: dict = Depends(require_staff)) -> dict:
     _mc(False).remove_object("materials", filename)
     return {"ok": True}
+
+
+@app.get("/api/dl")
+async def download_material(name: str):
+    """Принудительное скачивание файла из публичного бакета materials (Content-Disposition:
+    attachment). Без auth — бакет и так публичный; эндпоинт лишь форсит «скачать», а не «открыть»."""
+    safe = name.replace("/", "_").replace("\\", "_").replace("..", "_").strip()
+    url = _mc(True).presigned_get_object(
+        "materials", safe, expires=timedelta(hours=1),
+        response_headers={"response-content-disposition": f'attachment; filename="{safe}"'})
+    return RedirectResponse(url)
 
 
 @app.post("/api/admin/lecture-material")

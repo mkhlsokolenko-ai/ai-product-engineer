@@ -195,7 +195,9 @@ const IC={
  chev:'<path d="m6 9 6 6 6-6"/>'
 };
 const ic=(n,s=17,st=1.8,color='')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${color||'currentColor'}" stroke-width="${st}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
-const annFile=a=>(a&&a.attach_url)?`<a href="${esc(a.attach_url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:500;color:var(--accent)">${ic('down',15,2)}${esc(a.attach_name||'Скачать файл')}</a>`:"";
+const annFile=a=>{if(!a||!(a.attach_name||a.attach_url))return"";
+  const href=a.attach_name?("/api/dl?name="+encodeURIComponent(a.attach_name)):a.attach_url;
+  return `<a href="${esc(href)}" download="${esc(a.attach_name||'')}" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:500;color:var(--accent)">${ic('down',15,2)}Скачать · ${esc(a.attach_name||'файл')}</a>`;};
 
 // ── Тема ──
 function curTheme(){const s=localStorage.getItem('theme');if(s)return s;return (window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
