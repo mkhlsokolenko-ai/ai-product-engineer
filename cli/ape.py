@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.16.0"
+APE_VERSION = "1.17.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -1850,6 +1850,21 @@ def _run_wave(wi: int, tasks: list) -> list:
 def cmd_agents(goal: str) -> None:
     if not goal.strip():
         print(col("  Пример: /agents по @файлу подготовь данные для DCF: рынок, риски, экономика", "gray")); return
+    # Контекст из CLI: раскрываем @файлы и кладём их содержимое на доску (fact «файл:…»),
+    # чтобы КАЖДАЯ волна видела его через bb_context. Без этого агенты не получали файл.
+    clean, atts = _expand_files(goal)
+    for name, content, _note in atts:
+        budget = content[:6000]
+        bb_append({"type": "set", "key": f"файл:{name}",
+                   "value": budget + (" …[обрезано]" if len(content) > 6000 else ""),
+                   "agent": "ты"})
+    if atts:
+        print(col("  📎 контекст на доску: " + ", ".join(n for n, _, _ in atts), "dim"), file=sys.stderr)
+        goal = clean or "Изучи приложённые файлы на доске (факты «файл:…») и выполни задачу."
+    else:
+        goal = clean or goal
+    files_hint = (" На доске уже лежат факты «файл:…» с содержимым приложенных файлов — "
+                  "используй их (bb_read), не проси прислать файл.") if atts else ""
     _STOP.clear()
     print(col("  ⟳ планирую волны…", "dim"), file=sys.stderr)
     try:
@@ -1859,7 +1874,7 @@ def cmd_agents(goal: str) -> None:
             f"доске. Типично: волна 1 — сбор/извлечение фактов (каждая задача пишет на доску через "
             f"bb_post), волна 2 — анализ/сравнение на основе доски (bb_read), опц. волна 3 — проверка. "
             f"Всего не более {AGENT_MAX} задач в волне. Верни ТОЛЬКО JSON: массив волн, каждая — "
-            f"массив строк-задач.\n\nЦель: {goal}",
+            f"массив строк-задач.{files_hint}\n\nЦель: {goal}",
             "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 700})
         waves = _json_waves(pr.get("text", ""))
     except BaseException:  # noqa: BLE001
