@@ -1884,6 +1884,24 @@ def bb_compact() -> int:
     return n
 
 
+def bb_new_run() -> int:
+    """Начать свежий прогон: доска = рабочая память ПРОГОНА (ADR-009), между прогонами шум не тянем.
+    Текущую доску архивируем (bb_archive/), основную очищаем. Возвращает число заархивированных событий."""
+    p = _bb_path()
+    if not os.path.exists(p) or os.path.getsize(p) == 0:
+        return 0
+    n = len(bb_events())
+    arch = os.path.join(CFG_DIR, "bb_archive")
+    os.makedirs(arch, exist_ok=True)
+    dst = os.path.join(arch, f"run-{int(time.time())}-{_session_id()[:8]}.jsonl")
+    with _BB_LOCK:
+        try:
+            os.replace(p, dst)
+        except OSError:
+            open(p, "w", encoding="utf-8").close()
+    return n
+
+
 # ═══════════════ DATA PLANE — агент-нативный слой данных (источник → canonical JSON) ═══════════════
 # Три компонента (ABOP_ARD §3): Source Adapter (источник→строки) → Canonical Schema (типизированная
 # сущность) → Data Contract (что агент получит). Data Recipe пишет ЧЕЛОВЕК (no-code JSON): source →
@@ -1911,8 +1929,51 @@ def _adapter_json(src: dict) -> list:
     return data if isinstance(data, list) else data.get(src.get("root", "items"), [])
 
 
+def _guard_url(url: str) -> str:
+    """Анти-SSRF: только http/https, запрет link-local/облачных metadata-адресов (как egress-прокси sLAVA)."""
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if u.scheme not in ("http", "https"):
+        raise ValueError("источник http: только http/https")
+    host = (u.hostname or "").lower()
+    if host.startswith("169.254.") or host in ("metadata", "metadata.google.internal"):
+        raise ValueError(f"host {host} заблокирован (SSRF: link-local/metadata)")
+    return url
+
+
+def _adapter_http(src: dict) -> list:
+    """pull-адаптер HTTP(S)→JSON. egress=external: URL валидируется (анти-SSRF); ответ — данные, не команды."""
+    url = _guard_url(src["url"])
+    req = urllib.request.Request(url, headers=src.get("headers", {}) or {})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    return data if isinstance(data, list) else data.get(src.get("root", "items"), [])
+
+
+def _adapter_sqlite(src: dict) -> list:
+    """pull-адаптер SQLite (READ-ONLY). Запрос задаёт автор рецепта; движок открывает БД только на чтение."""
+    import sqlite3
+    p = os.path.expanduser(src["path"])
+    con = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in con.execute(src["query"], src.get("params", []))]
+    finally:
+        con.close()
+
+
+def _adapter_computed(src: dict) -> list:
+    """computed-адаптер: производная сущность из УЖЕ канонизированной (RFM из transaction и т.п.).
+    Источник = data_query другой сущности; строки маппятся рецептом в новую сущность."""
+    flt = src.get("filter") if isinstance(src.get("filter"), dict) else None
+    return data_query(src["from_entity"], flt, limit=int(src.get("limit", 1000)))
+
+
 register_adapter("csv", _adapter_csv)
 register_adapter("json", _adapter_json)
+register_adapter("http", _adapter_http)        # egress=external — анти-SSRF
+register_adapter("sqlite", _adapter_sqlite)    # read-only
+register_adapter("computed", _adapter_computed)  # производная сущность из canonical
 
 # ── Реестр canonical-схем (Canonical Schema): обязательные поля сущности. Расширяется вертикалями. ──
 CANONICAL_SCHEMAS = {
@@ -2511,6 +2572,9 @@ def _run_wave(wi: int, tasks: list) -> list:
 def cmd_agents(goal: str) -> None:
     if not goal.strip():
         print(col("  Пример: /agents по @файлу подготовь данные для DCF: рынок, риски, экономика", "gray")); return
+    _arch = bb_new_run()                                   # свежий прогон: доска прошлого — в архив (шум не тянем)
+    if _arch:
+        print(col(f"  🧹 доска очищена (прошлый прогон {_arch} событий → архив)", "dim"), file=sys.stderr)
     # Контекст из CLI: раскрываем @файлы и кладём их содержимое на доску (fact «файл:…»),
     # чтобы КАЖДАЯ волна видела его через bb_context. Без этого агенты не получали файл.
     clean, atts = _expand_files(goal)
@@ -2537,10 +2601,15 @@ def cmd_agents(goal: str) -> None:
             "prompt": f"Составь план из 1–3 ВОЛН для параллельных агентов. Волна = список независимых "
             f"задач (выполняются параллельно); СЛЕДУЮЩАЯ волна видит результаты предыдущей на общей "
             f"доске. Типично: волна 1 — сбор/извлечение фактов (каждая задача пишет на доску через "
-            f"bb_post), волна 2 — анализ/сравнение на основе доски (bb_read), опц. волна 3 — проверка. "
-            f"Всего не более {AGENT_MAX} задач в волне. КАЖДОЙ задаче назначь семью-исполнителя из "
-            f"ростера (по смыслу задачи): {fam_roster}. Верни ТОЛЬКО JSON: массив волн, каждая — массив "
-            f'объектов {{"task":"...","family":"<id семьи>"}}.{files_hint}\n\nЦель: {goal}',
+            f"bb_post), волна 2 — анализ/сравнение на основе доски (bb_read), опц. волна 3 — проверка/вывод. "
+            f"ОБЯЗАТЕЛЬНО РАЗЛОЖИ по аспектам: если цель многоаспектна (например «рынок + экономика + риски "
+            f"+ вердикт»), КАЖДЫЙ аспект — ОТДЕЛЬНАЯ задача СВОЕЙ семье, НЕ сваливай всё в один общий пункт. "
+            f"Разным аспектам — разные семьи. Всего не более {AGENT_MAX} задач в волне. "
+            f"Семьи-исполнители: {fam_roster}. "
+            f'Пример для «оцени идею X»: [[{{"task":"рыночный контекст и конкуренты X","family":"research"}},'
+            f'{{"task":"unit-экономика X: ARPU/CAC/LTV","family":"finance"}}],'
+            f'[{{"task":"3 главных риска X","family":"critic"}},{{"task":"вердикт go/no-go по доске","family":"decisions"}}]]. '
+            f'Верни ТОЛЬКО JSON: массив волн, каждая — массив объектов {{"task":"...","family":"<id семьи>"}}.{files_hint}\n\nЦель: {goal}',
             "session_id": _session_id(), "profile": "research", "system": "", "max_tokens": 900})
         waves = _json_waves_fam(pr.get("text", ""))
     except BaseException:  # noqa: BLE001
