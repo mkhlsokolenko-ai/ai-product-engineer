@@ -657,7 +657,7 @@ _FAMILY_KW = {
     "management": ["задач", "тикет", "статус", "письм", "email", "встреч", "митинг", "трекер", "jira", "отчёт по проект", "напоминан"],
     "architecture": ["архитектур", "схем", "c4", "диаграмм", "api-дизайн", "api design", "контракт", "sdd", "vllm", "erd"],
     "engineering": ["код", "тест", "реализ", "fastapi", "docker", "endpoint", "коммит", "напиши функц", "багфикс", "rag", "память агент"],
-    "research": ["icp", "боль клиент", "jtbd", "спрос", "ценност", "интервью", "идея", "аналог", "рынок", "конкурент", "ресёрч"],
+    "research": ["icp", "боль клиент", "jtbd", "спрос", "ценност", "интервью", "иде", "аналог", "рын", "конкурент", "ресёрч", "market"],
     "critic": ["критик", "риск", "слаб", "дыр", "прожар", "сломает", "ревью спек"],
     "decisions": ["adr", "зафиксир решени", "грейдер", "acceptance"],
 }
@@ -727,6 +727,17 @@ def route_family(task: str) -> str:
         if any(w in t for w in words):
             return fam
     return "analytics"
+
+
+def detect_families(goal: str) -> list:
+    """Семьи, чьи ключевые слова встречаются в цели (уникально, по порядку ростера).
+    Основа детерминированной декомпозиции многоаспектной цели, когда планировщик ленив."""
+    t = (goal or "").lower()
+    out = []
+    for fam, words in _FAMILY_KW.items():
+        if fam not in out and any(w in t for w in words):
+            out.append(fam)
+    return out
 
 
 def route_member(fam_id: str, task: str) -> str:
@@ -2615,6 +2626,14 @@ def cmd_agents(goal: str) -> None:
     except BaseException:  # noqa: BLE001
         waves = []
     waves = [w[:AGENT_MAX] for w in waves if w][:3] or [[{"task": goal, "family": route_family(goal)}]]
+    # детерминированный фолбэк: планировщик дал плоский план (1 задача), но цель многоаспектна →
+    # разложить по семьям в коде (маленькая модель-оркестратор часто ленится дробить)
+    if sum(len(w) for w in waves) == 1:
+        fams = detect_families(goal)
+        if len(fams) >= 2:
+            waves = [[{"task": f"{goal} — твой аспект: {AGENT_FAMILIES[f]['title']}", "family": f}
+                      for f in fams[:AGENT_MAX]]]
+            print(col(f"  🧠 план был плоский — разложил по семьям: {', '.join(fams[:AGENT_MAX])}", "dim"), file=sys.stderr)
     bb_append({"type": "note", "text": f"ЦЕЛЬ: {goal}", "agent": "оркестратор"})
     print(col(f"  🧠 план: {len(waves)} волн(ы) · доска Blackboard активна (/board) · Esc — стоп", "dim"))
     all_res = []
