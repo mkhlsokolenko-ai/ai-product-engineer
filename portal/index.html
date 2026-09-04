@@ -190,9 +190,14 @@ const IC={
  moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
  up:'<path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v3h16v-3"/>',
  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ down:'<path d="M12 4v12m0 0 4-4m-4 4-4-4"/><path d="M4 16v3h16v-3"/>',
+ clip:'<path d="M21 11.5 12 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9 16.5a1.6 1.6 0 0 1-2.3-2.3l7.8-7.8"/>',
  chev:'<path d="m6 9 6 6 6-6"/>'
 };
 const ic=(n,s=17,st=1.8,color='')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${color||'currentColor'}" stroke-width="${st}" stroke-linecap="round" stroke-linejoin="round">${IC[n]||''}</svg>`;
+const annFile=a=>{if(!a||!(a.attach_name||a.attach_url))return"";
+  const href=a.attach_name?("/api/dl?name="+encodeURIComponent(a.attach_name)):a.attach_url;
+  return `<a href="${esc(href)}" download="${esc(a.attach_name||'')}" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:500;color:var(--accent)">${ic('down',15,2)}Скачать · ${esc(a.attach_name||'файл')}</a>`;};
 
 // ── Тема ──
 function curTheme(){const s=localStorage.getItem('theme');if(s)return s;return (window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
@@ -303,18 +308,18 @@ async function vHome(){
    <div class="card" style="display:flex;gap:24px;align-items:center;flex-wrap:wrap">
      ${ring(d.progress_pct||0)}
      <div style="flex:1;min-width:240px">
-       <div class="caps" style="margin-bottom:6px">${d.week?("Неделя "+d.week+" из "+d.weeks):"Курс скоро стартует"}</div>
+       <div class="caps" style="margin-bottom:6px">${d.week?("Неделя "+d.week+" · проведено "+(d.lectures_done||0)+"/"+(d.lectures_total||0)+" лекций"):"Курс скоро стартует"}</div>
        <div style="font-size:22px;font-weight:600;margin-bottom:4px">Привет, ${esc((d.student||"студент").split(/\s+/)[0])}</div>
-       <div class="sub" style="margin-bottom:16px">Продолжай: <strong style="color:var(--ink1)">${esc(cl.title||"—")}</strong></div>
+       <div class="sub" style="margin-bottom:16px">${cl.status==='passed'?'Курс пройден. Следующее:':'Следующая лекция:'} <strong style="color:var(--ink1)">${esc(cl.title||"—")}</strong>${cl.date?` · <span class="mono">${cl.date.split('-').reverse().join('.')}</span>`:""}</div>
        <div style="display:flex;gap:8px;flex-wrap:wrap">
-         <button class="btn primary" onclick="go('lectures')">Продолжить обучение →</button>
+         <button class="btn primary" onclick="goLec('${cl.code||''}')">Продолжить обучение →</button>
          ${nd?`<button class="btn" onclick="go('homework')">К заданию · через ${nd.days_left} дн</button>`:""}
        </div></div></div>
    <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-     <div class="card" style="margin:0"><div class="caps" style="margin-bottom:10px">Текущая лекция</div>
+     <div class="card" style="margin:0"><div class="caps" style="margin-bottom:10px">Следующая лекция</div>
        <div class="t18" style="margin-bottom:6px">${esc(cl.title||"—")}</div>
-       <div class="sub" style="margin-bottom:14px">${esc(cl.topic||"")}</div>
-       <a href="#" onclick="go('lectures');return false">Материалы лекции →</a></div>
+       <div class="sub" style="margin-bottom:14px">${esc(cl.topic||"")}${cl.date?` · <span class="mono faint">${cl.date.split('-').reverse().join('.')}</span>`:""}</div>
+       <a href="#" onclick="goLec('${cl.code||''}');return false">Открыть лекцию →</a></div>
      <div class="card" style="margin:0;border-color:${nd&&nd.days_left<=2?'var(--warn)':'var(--b1)'}">
        <div class="caps" style="margin-bottom:10px;color:${nd&&nd.days_left<=2?'var(--warn)':'var(--ink3)'}">${nd?("Ближайший дедлайн · через "+nd.days_left+" дн"):"Дедлайнов нет"}</div>
        ${nd?`<div class="t18" style="margin-bottom:6px">${esc(nd.title)}</div><div class="sub" style="margin-bottom:14px">Неделя ${nd.week}.</div><a href="#" onclick="go('homework');return false">Открыть задание →</a>`:`<div class="sub">Всё сдано 🎉</div>`}</div></div>
@@ -323,7 +328,7 @@ async function vHome(){
      <div style="display:flex;flex-direction:column;gap:2px">${onbHtml}</div>
      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span class="sub">Застрял на подключении MCP?</span><button class="btn sm" onclick="go('cabinet')">Инструкция по подключению</button></div></div>`:""}
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Анонсы</div>
-     ${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>`;
+     ${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}</div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>`;
 }
 
 // ══════════════ Курс ══════════════
@@ -350,27 +355,48 @@ const SKILLS={
  "conventional-commits":["Дисциплина коммитов","Читаемая история изменений — стандарт, который агент соблюдает сам"],
  "fastapi-patterns":["Паттерны FastAPI","Собрать сервис по best practices, а не копипастой из туториала"],
  "docker-patterns":["Паттерны Docker","Воспроизводимое окружение — «работает у меня» больше не аргумент"],
+ "dcf-valuation":["DCF Valuation","Оценить стоимость по дисконтированным потокам — WACC, терминал, чувствительность; числа только из источника"],
+ "three-statement-model":["3-Statement Model","Связать P&L, баланс и денежный поток в одну модель — допущения явны, баланс сходится"],
+ "finance-report":["Финансовый отчёт","P&L, KPI, MoM/YoY и анализ отклонений — каждая цифра со ссылкой на источник"],
+ "budget-forecast":["Бюджет и прогноз","Driver-based планирование по сценариям (база/пессимизм/оптимизм) с проверяемыми допущениями"],
+ "market-research":["Market Research","Рынок и конкуренты с источником каждого факта; TAM/SAM/SOM снизу-вверх, без догадок"],
+ "process-map":["Карта процесса AS-IS/TO-BE","Описать процесс, найти узкие места с метриками, спроектировать TO-BE — куда сядет агент"],
+ "one-three-one":["One-Three-One","Решение для стейкхолдеров: одна проблема → три опции с trade-off → одна рекомендация"],
+ "dashboard-builder":["Dashboard Builder","Дерево метрик input/output/guardrail — что мерить и как, без vanity-метрик"],
+ "c4-diagram":["C4 и схемы","Диаграммы как код (Mermaid/PlantUML/Kroki): контекст→контейнеры→компоненты, sequence, ERD"],
+ "api-design":["API Design","Contract-first: ресурсы, версии, идемпотентность, ошибки RFC 7807, обратная совместимость"],
+ "meeting-action-items":["Встреча → действия","Заметки → решения, владельцы, сроки, тикеты; ничего не теряем. Действия — под подтверждением"],
+ "to-tickets":["План → тикеты","Спека → тикеты с критериями приёмки и зависимостями (INVEST). Заведение — под подтверждением"],
+ "status-report":["Статус проекта","RAG-статус, прогресс vs план, риски и блокеры — на фактах из трекера, не по памяти"],
+ "email-draft":["Деловое письмо","BLUF: главное сверху, один явный CTA, тон по адресату. Отправка — под подтверждением человека"],
+ "weekly-update":["Недельный апдейт","Метрики, аномалии, решения, план — коротко и на фактах"],
 };
-let _lecOpen=null;
+let _lecOpen=null,_lecMap={};
 async function vLectures(){
   view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
   const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
-  const cw=d.week||0, done=ls.filter(x=>cw&&x.week<cw).length, pct=ls.length?Math.round(100*done/ls.length):0;
-  if(_lecOpen==null)_lecOpen=cw||1;
+  const staff=ROLES.includes("lecturer")||ROLES.includes("admin");
+  const cw=d.week||0, done=ls.filter(x=>x.status==='passed').length, pct=ls.length?Math.round(100*done/ls.length):0;
   const asW={};as.forEach(a=>{asW[a.week]=a;});
+  _lecMap={};ls.forEach(l=>{_lecMap[l.code]=l;});
   const byBlock={};ls.forEach(l=>{(byBlock[l.block]=byBlock[l.block]||{name:l.block_name,items:[]}).items.push(l);});
   let blocks="";
   Object.keys(byBlock).sort((a,b)=>a-b).forEach(bk=>{const b=byBlock[bk];
     blocks+=`<div style="margin-bottom:24px"><div class="caps" style="margin-bottom:8px">Блок ${bk} · ${esc(b.name||"")}</div>`;
     b.items.forEach(l=>{
-      const st=cw&&l.week<cw?"done":cw&&l.week===cw?"info":"todo";
-      const [cbg,cfg]=CH[st];const label=st==="done"?"пройдено":st==="info"?"сейчас":"впереди";
-      const open=_lecOpen===l.week;const asg=asW[l.week];
+      const st=l.status==='passed'?"done":cw&&l.week===cw?"info":cw&&l.week<cw?"done":"todo";
+      const [cbg,cfg]=CH[st];const label=l.status==='passed'?"проведена":st==="done"?"пройдено":st==="info"?"сейчас":"впереди";
+      const open=_lecOpen===l.code;const asg=asW[l.week];
+      const dstr=l.date?l.date.split('-').reverse().join('.'):"";
+      const dl=l.hw_days_left;let dz="";
+      if(dl!=null){const t=dl<0?`ДЗ −${-dl} дн.`:dl===0?"ДЗ сегодня":dl===1?"ДЗ завтра":`ДЗ ${dl} дн.`;
+        dz=dl<0?chip('var(--crit-bg)','var(--crit)',t):dl<=2?chip('var(--warn-bg)','var(--warn)',t):chip('var(--bg2)','var(--ink3)',t);}
       blocks+=`<div class="card" style="padding:0;margin-bottom:8px;overflow:hidden;border-color:${st==='info'?'var(--accent)':'var(--b1)'}">
-        <div role="button" tabindex="0" aria-expanded="${open}" onclick="lecToggle(${l.week})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lecToggle(${l.week})}" style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;opacity:${st==='done'?'.65':'1'}">
-          <span class="mono" style="font-size:12px;font-weight:600;color:var(--ink3);width:24px;flex-shrink:0">${String(l.week).padStart(2,'0')}</span>
+        <div role="button" tabindex="0" aria-expanded="${open}" onclick="lecToggle('${l.code}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lecToggle('${l.code}')}" style="display:flex;align-items:center;gap:12px;padding:14px 20px;cursor:pointer;opacity:${st==='done'?'.7':'1'}">
+          <span class="mono" style="font-size:12px;font-weight:600;color:var(--ink3);width:28px;flex-shrink:0">${l.week}.${l.seq}</span>
           <span style="font-size:14px;font-weight:600;flex:1">${esc(l.title)}</span>
-          ${chip(cbg,cfg,label)}
+          ${dstr?`<span class="mono faint" style="font-size:12px">${dstr}</span>`:""}
+          ${dz}${chip(cbg,cfg,label)}
           <span style="color:var(--ink3);transform:rotate(${open?'180deg':'0'});transition:.15s;display:flex">${ic('chev',16)}</span></div>
         ${open?`<div style="padding:2px 20px 20px;border-top:1px solid var(--b1)">
           ${l.topic?`<div class="sub" style="padding-top:14px;margin-bottom:16px">${esc(l.topic)}</div>`:""}
@@ -397,17 +423,40 @@ async function vLectures(){
               <span style="flex-shrink:0;margin-top:1px">${ic('homework',16)}</span>
               <div><div class="sub" style="font-size:12.5px">${esc(l.practice)}</div>
               <div class="faint" style="margin-top:6px">Практика — не оценивается, но без неё следующая лекция «поедет». Делай через ape.</div></div></div>`:""}
+          ${staff?`<div style="margin-top:20px;padding-top:16px;border-top:1px dashed var(--b2)">
+            <div class="caps" style="margin-bottom:10px">Управление лекцией · только лектор</div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end">
+              <div><div class="faint" style="font-size:11.5px;margin-bottom:4px">Дата этой лекции</div>
+                <div style="display:flex;gap:6px"><input type="date" id="ld_${l.code}" value="${l.date||''}" class="inp" style="width:150px">
+                <button class="btn sm" onclick="lecSchedule('${l.code}')">Сохранить</button></div></div>
+              <div><div class="faint" style="font-size:11.5px;margin-bottom:4px">Дата следующей лекции (опц.)</div>
+                <div style="display:flex;gap:6px"><input type="date" id="ln_${l.code}" class="inp" style="width:150px">
+                <button class="btn primary sm" onclick="lecPass('${l.code}')">${l.status==='passed'?'✓ Проведена':'Отметить: прошла →'}</button></div></div>
+            </div>
+            <div class="faint" style="margin-top:8px;font-size:11.5px">При изменении даты пересчитываются дедлайны ДЗ и уходит уведомление студентам (портал + бот).</div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn sm" onclick="lecEditModal(_lecMap['${l.code}'])">Редактировать</button>
+              <button class="btn sm" style="color:var(--crit)" onclick="lecDelete('${l.code}')">Удалить</button></div>
+          </div>`:""}
         </div>`:""}
       </div>`;
     });
     blocks+=`</div>`;
   });
   $("lc").innerHTML=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-      <div><div class="t18">Пройдено <span class="mono">${done}/${ls.length}</span> лекций</div><div class="sub">${cw?("Идёт неделя "+cw+" из 15."):"Курс ещё не начался."}</div></div>
-      <div class="mono" style="font-size:23px;font-weight:700;color:var(--accent)">${pct}%</div></div>
+      <div><div class="t18">Проведено <span class="mono">${done}/${ls.length}</span> лекций</div><div class="sub">${cw?("Идёт "+cw+"-я неделя курса."):"Курс ещё не начался."}${staff?" Прогресс идёт по кнопке «прошла».":""}</div></div>
+      <div style="display:flex;align-items:center;gap:14px">${staff?`<button class="btn sm" onclick="lecEditModal(null)">${ic('up',14,2)} Добавить лекцию</button>`:""}<div class="mono" style="font-size:23px;font-weight:700;color:var(--accent)">${pct}%</div></div></div>
       <div class="pbar"><i style="width:${pct}%"></i></div></div>${blocks}`;
 }
-function lecToggle(w){_lecOpen=_lecOpen===w?null:w;vLectures();}
+function goLec(code){if(code)_lecOpen=code;go('lectures');}
+function lecToggle(code){_lecOpen=_lecOpen===code?null:code;vLectures();}
+async function lecSchedule(code){const dt=$("ld_"+code).value;if(!dt)return toast("Укажи дату");
+  try{await api("/api/lectures/"+encodeURIComponent(code)+"/schedule",{method:"POST",body:JSON.stringify({date:dt})});toast("Дата лекции обновлена");vLectures();}
+  catch(e){toast(e.message||"Ошибка");}}
+async function lecPass(code){const nd=$("ln_"+code).value;
+  if(!confirm("Отметить лекцию как проведённую"+(nd?" и назначить следующую на "+nd.split('-').reverse().join('.'):"")+"?"))return;
+  try{await api("/api/lectures/"+encodeURIComponent(code)+"/pass",{method:"POST",body:JSON.stringify({next_date:nd})});toast("Лекция отмечена, студенты уведомлены");vLectures();}
+  catch(e){toast(e.message||"Ошибка");}}
 
 // ══════════════ Задания ══════════════
 async function vHomework(){
@@ -496,7 +545,7 @@ async function vCommunity(){
   const rows=board.map((r,i)=>{const mine=r.username===me;
     return `<tr style="background:${mine?'var(--accent-bg)':'transparent'}"><td class="mono" style="color:var(--ink3)">${i+1}</td><td style="font-weight:500">${esc(r.username)} ${mine?'<span class="chip" style="background:var(--accent-bg);color:var(--accent)">ты</span>':''}</td><td class="mono" style="color:var(--ink2)">${fmtN(r.tokens)}</td><td class="mono">${r.cost_rub.toFixed(1)} ₽</td></tr>`;}).join("");
   $("cm").innerHTML=`
-   <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
+   <div class="card"><div class="t18" style="margin-bottom:14px">Анонсы лектора</div>${anns.length?`<div style="display:flex;flex-direction:column;gap:12px">${anns.map(a=>`<div style="padding-left:12px;border-left:2px solid var(--accent)"><div style="font-size:13.5px;font-weight:600;margin-bottom:2px">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}<div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")}</div>`:`<div class="faint">Пока нет анонсов</div>`}</div>
    <div class="card"><div class="t18" style="margin-bottom:4px">Лидерборд по токенам · неделя</div><div class="sub" style="margin-bottom:16px">Кто активнее всех гоняет агентов. Не оценка — сигнал вовлечённости.</div>
      <div style="display:flex;flex-direction:column;gap:8px">${bars||empty("community","Пока никто не набрал токенов на этой неделе.")}</div></div>
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Группа</div><table><thead><tr><th>#</th><th>Студент</th><th>Токены</th><th>Cost</th></tr></thead><tbody>${rows||`<tr><td colspan="4"><div class="empty">Группа наполнится после первых входов студентов.</div></td></tr>`}</tbody></table></div>`;
@@ -643,18 +692,60 @@ async function delMat(name){if(!confirm("Удалить файл "+name+" из �
 async function admNotes(){aB(`<div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px"><div class="t18">Заметки лектора</div><span class="faint mono" id="nState"></span></div><textarea class="ta" id="lnotes" rows="12" style="line-height:1.6" placeholder="Приватные заметки по группе — автосохранение"></textarea></div>`);
   const n=await api("/api/admin/notes").catch(()=>({body:""}));$("lnotes").value=n.body||"";
   $("lnotes").oninput=()=>{$("nState").textContent="сохранение…";clearTimeout(admNotes._t);admNotes._t=setTimeout(async()=>{await api("/api/admin/notes",{method:"PUT",body:JSON.stringify({body:$("lnotes").value})});$("nState").textContent="сохранено";},700);};}
-async function admAnnounce(){aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div><input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px"><textarea class="ta" id="annB" rows="3" placeholder="Текст анонса" style="margin-bottom:14px"></textarea><button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
+let _annAttach=null;
+async function admAnnounce(){_annAttach=null;aB(`<div class="card"><div class="t18" style="margin-bottom:14px">Новый анонс</div>
+   <input class="inp" id="annT" placeholder="Заголовок" style="margin-bottom:10px">
+   <textarea class="ta" id="annB" rows="4" placeholder="Текст анонса (переносы строк сохраняются)" style="margin-bottom:12px"></textarea>
+   <div class="dz" id="annDz" role="button" tabindex="0" style="padding:16px;margin-bottom:6px">${ic('clip',20,1.8,'var(--accent)')}<div style="font-size:13px;font-weight:500;margin-top:6px">Прикрепить файл — перетащите или нажмите</div><div class="faint" style="margin-top:2px">PDF, MD, ZIP · попадёт в публичный бакет, студенты скачают</div><input type="file" id="annIn" style="display:none"></div>
+   <div id="annFileMsg" class="faint" style="margin-bottom:12px"></div>
+   <button class="btn primary" onclick="postAnn()">Опубликовать</button></div>
    <div class="card" style="margin-bottom:0"><div class="t18" style="margin-bottom:14px">Опубликованные</div><div id="annList">${skLine("50%")+skLine("80%")}</div></div>`);
-  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub">${esc(a.body)}</div><div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||empty(null,"Анонсов пока нет.");}
-async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value})});toast("Анонс опубликован");admAnnounce();}
+  wireDrop($("annDz"),$("annIn"),annAttachUpload);
+  const anns=await api("/api/announcements").catch(()=>[]);$("annList").className="";$("annList").innerHTML=anns.map(a=>`<div style="padding:10px 0;border-bottom:1px solid var(--b1)"><div style="font-size:13.5px;font-weight:600">${esc(a.title)}</div><div class="sub" style="white-space:pre-wrap">${esc(a.body)}</div>${annFile(a)}<div class="faint mono" style="margin-top:4px">${esc(a.by||"")}</div></div>`).join("")||empty(null,"Анонсов пока нет.");}
+async function annAttachUpload(files){const f=files[0];if(!f)return;const msg=$("annFileMsg");msg.textContent="Загрузка "+f.name+"…";
+  try{const fd=new FormData();fd.append("file",f,f.name);const r=await fetch("/api/admin/material-upload",{method:"POST",headers:{Authorization:"Bearer "+TOKEN},body:fd});if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();_annAttach={url:j.public_url,name:j.name};msg.innerHTML=`Прикреплён: <b>${esc(j.name)}</b> · <a href="#" onclick="_annAttach=null;document.getElementById('annFileMsg').textContent='';return false" style="color:var(--crit)">убрать</a>`;}
+  catch(e){msg.textContent="Ошибка загрузки: "+e.message;}}
+async function postAnn(){if(!$("annT").value.trim())return toast("Нужен заголовок");
+  await api("/api/admin/announcements",{method:"POST",body:JSON.stringify({title:$("annT").value,body:$("annB").value,attach_url:(_annAttach&&_annAttach.url)||"",attach_name:(_annAttach&&_annAttach.name)||""})});
+  _annAttach=null;toast("Анонс опубликован");admAnnounce();}
 
 // ── Модалки ──
 function showModal(title,fields,cta,submit){
+  const fld=f=>{const id="mf_"+f.k,v=(f.val!=null?String(f.val):"");
+    if(f.type==='textarea')return `<label class="lbl">${esc(f.label)}<textarea class="inp" id="${id}" placeholder="${esc(f.ph||'')}" style="margin-top:6px;height:auto;min-height:74px;padding:10px 12px;resize:vertical;font-family:inherit">${esc(v)}</textarea></label>`;
+    if(f.type==='select')return `<label class="lbl">${esc(f.label)}<select class="inp" id="${id}" style="margin-top:6px">${(f.options||[]).map(o=>`<option value="${esc(o.v)}"${String(o.v)===v?' selected':''}>${esc(o.label)}</option>`).join("")}</select></label>`;
+    return `<label class="lbl">${esc(f.label)}<input class="inp" id="${id}" placeholder="${esc(f.ph||'')}" value="${esc(v)}" style="margin-top:6px"></label>`;};
   $("modalHost").innerHTML=`<div class="modalbg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="t18" style="margin-bottom:14px">${esc(title)}</div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">${fields.map(f=>`<label class="lbl">${esc(f.label)}<input class="inp" id="mf_${f.k}" placeholder="${esc(f.ph||'')}" style="margin-top:6px"></label>`).join("")}</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">${fields.map(fld).join("")}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" onclick="closeModal()">Отмена</button><button class="btn primary" id="mSubmit">${esc(cta)}</button></div></div></div>`;
   $("mSubmit").onclick=submit;
 }
+const BLOCK_OPTS=[{v:1,label:"Блок 1 · Discovery и продукт"},{v:2,label:"Блок 2 · Проектирование"},{v:3,label:"Блок 3 · Инженерия агента"},{v:4,label:"Блок 4 · Оценка и экономика"},{v:5,label:"Блок 5 · Защита"}];
+function lecEditModal(l){
+  showModal(l?"Редактировать лекцию":"Новая лекция",[
+    {k:"title",label:"Название",ph:"Название лекции",val:l&&l.title},
+    {k:"week",label:"Неделя (1–15)",ph:"8",val:l&&l.week},
+    {k:"seq",label:"Порядок в неделе (1, 2, 3…)",ph:"1",val:l?l.seq:1},
+    {k:"block",label:"Блок",type:"select",options:BLOCK_OPTS,val:(l&&l.block)||1},
+    {k:"topic",label:"О чём (подзаголовок)",ph:"краткое описание темы",type:"textarea",val:l&&l.topic},
+    {k:"outcomes",label:"Чему научишься (по пункту на строку)",ph:"один пункт на строку",type:"textarea",val:l&&(l.outcomes||[]).join("\n")},
+    {k:"skills",label:"Скиллы (через запятую)",ph:"icp-interviewer, jtbd-formulator",val:l&&(l.skills||[]).join(", ")},
+  ],l?"Сохранить":"Добавить",async()=>{
+    const title=mval("title").trim();if(!title)return toast("Нужно название");
+    const week=parseInt(mval("week"));if(!week||week<1)return toast("Нужна неделя");
+    const body={week,seq:parseInt(mval("seq"))||1,block:parseInt(mval("block"))||1,title,topic:mval("topic").trim(),
+      outcomes:mval("outcomes").split("\n").map(x=>x.trim()).filter(Boolean),
+      skills:mval("skills").split(",").map(x=>x.trim()).filter(Boolean)};
+    try{
+      if(l){await api("/api/lectures/"+encodeURIComponent(l.code),{method:"PUT",body:JSON.stringify(body)});}
+      else{const r=await api("/api/lectures",{method:"POST",body:JSON.stringify(body)});_lecOpen=r.code;}
+      closeModal();toast(l?"Лекция обновлена":"Лекция добавлена");vLectures();
+    }catch(e){toast(e.message||"Ошибка");}
+  });
+}
+async function lecDelete(code){const l=_lecMap[code]||{};if(!confirm("Удалить лекцию «"+(l.title||code)+"»? Это действие необратимо."))return;
+  try{await api("/api/lectures/"+encodeURIComponent(code),{method:"DELETE"});toast("Лекция удалена");vLectures();}
+  catch(e){toast(e.message||"Ошибка");}}
 function closeModal(){$("modalHost").innerHTML="";}
 function mval(k){return ($("mf_"+k)||{}).value||"";}
 function addStudentModal(){showModal("Добавить студента",[{k:"name",label:"Имя / логин",ph:"ivan"},{k:"partner",label:"Партнёр",ph:"Ozon Tech"}],"Добавить",async()=>{const n=mval("name").trim();if(!n)return toast("Заполните имя");const pv=mval("partner").trim();const p=(_adm.partners||[]).find(p=>p.name===pv);await api("/api/admin/student-meta",{method:"POST",body:JSON.stringify({student_id:"m_"+n.toLowerCase().replace(/[^a-z0-9]+/g,"_"),username:n,partner_id:p?p.id:null})});closeModal();toast("Студент добавлен");vAdmin();});}

@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 from jwt import PyJWKClient
 from minio import Minio
 from pydantic import BaseModel
@@ -42,6 +43,8 @@ class GradeIn(BaseModel):
 class AnnIn(BaseModel):
     title: str
     body: str
+    attach_url: str = ""
+    attach_name: str = ""
 
 
 class ProjectIn(BaseModel):
@@ -81,6 +84,25 @@ class LectureMaterialIn(BaseModel):
     week: int
     url: str = ""
     title: str = ""
+
+
+class LecturePassIn(BaseModel):
+    next_date: str = ""      # YYYY-MM-DD дата следующей лекции (опц.)
+
+
+class LectureScheduleIn(BaseModel):
+    date: str                # YYYY-MM-DD новая дата этой лекции
+
+
+class LectureIn(BaseModel):
+    week: int
+    seq: int = 1
+    block: int = 1
+    title: str
+    topic: str = ""
+    outcomes: list[str] = []
+    skills: list[str] = []
+    practice: str = ""
 
 
 def _mc(public: bool) -> Minio:
@@ -266,27 +288,137 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 
 @app.get("/api/lectures")
 async def lectures(claims: dict = Depends(verify)) -> list[dict]:
+    _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice "
-            "FROM lectures ORDER BY position,week"
+            "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status,code,seq "
+            "FROM lectures ORDER BY week,seq,position"
         )
         rows = await cur.fetchall()
         mrows = await (await c.execute(
             "SELECT id,lecture_week,title,url FROM lecture_materials ORDER BY id")).fetchall()
+        arows = await (await c.execute("SELECT week FROM assignments")).fetchall()
     mats: dict[int, list] = {}
     for mid, wk, title, url in mrows:
         mats.setdefault(wk, []).append({"id": mid, "title": title, "url": url})
+    hw_weeks = {r[0] for r in arows}
+    # ДЗ/материалы — на ПОСЛЕДНЮЮ лекцию недели (чтобы не дублировать на 2–3 лекциях)
+    last_seq: dict[int, int] = {}
+    for r in rows:
+        last_seq[r[0]] = max(last_seq.get(r[0], 0), r[11] or 1)
+    today = date.today()
     from portal_api.store import BLOCK_NAMES
-    return [
-        {"week": r[0], "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
-         "title": r[2], "topic": r[3], "materials_url": r[4],
-         "materials": mats.get(r[0], []),
-         "outcomes": [x for x in (r[5] or "").split("|") if x],
-         "skills": [x for x in (r[6] or "").split(",") if x],
-         "practice": r[7] or ""}
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        week, seq = r[0], r[11] or 1
+        eff = _effective_date(week, r[8], start)
+        is_last = seq == last_seq.get(week, 1)
+        item = {
+            "code": r[10], "week": week, "seq": seq,
+            "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
+            "title": r[2], "topic": r[3], "materials_url": r[4],
+            "materials": mats.get(week, []) if is_last else [],
+            "outcomes": [x for x in (r[5] or "").split("|") if x],
+            "skills": [x for x in (r[6] or "").split(",") if x],
+            "practice": r[7] or "",
+            "date": eff.isoformat(),
+            "status": r[9] or "planned",
+        }
+        if is_last and week in hw_weeks:
+            # дедлайн ДЗ — неделя от даты последней лекции недели; тикает от фактической даты
+            due = eff + timedelta(days=7)
+            item["hw_due"] = due.isoformat()
+            item["hw_days_left"] = (due - today).days
+        out.append(item)
+    return out
+
+
+@app.post("/api/lectures/{code}/pass")
+async def lecture_pass(code: str, body: LecturePassIn, claims: dict = Depends(require_staff)) -> dict:
+    """Отметить лекцию проведённой; опционально назначить дату следующей (с уведомлением)."""
+    by = claims.get("preferred_username", "?")
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT title,scheduled_at,position FROM lectures WHERE code=%s", (code,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
+        # если дата не назначалась — фиксируем фактическую как сегодня
+        await c.execute(
+            "UPDATE lectures SET status='passed', scheduled_at=COALESCE(scheduled_at,%s) WHERE code=%s",
+            (date.today(), code))
+        nxt = await (await c.execute(
+            "SELECT code,title FROM lectures WHERE position>%s ORDER BY position LIMIT 1", (row[2],))).fetchone()
+        tail = ""
+        payload = {"code": code, "action": "passed"}
+        if body.next_date and nxt:
+            try:
+                nd = date.fromisoformat(body.next_date[:10])
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
+            await c.execute("UPDATE lectures SET scheduled_at=%s WHERE code=%s", (nd, nxt[0]))
+            tail = f" Следующая лекция «{nxt[1]}» — {nd.strftime('%d.%m.%Y')}."
+            payload.update({"next_code": nxt[0], "next_date": nd.isoformat()})
+        await _notify(c, "lecture_passed", f"Лекция проведена: {row[0]}",
+                      f"«{row[0]}» отмечена как проведённая.{tail}", by, payload)
+    return {"ok": True}
+
+
+@app.post("/api/lectures/{code}/schedule")
+async def lecture_schedule(code: str, body: LectureScheduleIn, claims: dict = Depends(require_staff)) -> dict:
+    """Назначить/перенести дату лекции — тикают дедлайны ДЗ, летит уведомление в бот."""
+    by = claims.get("preferred_username", "?")
+    try:
+        nd = date.fromisoformat(body.date[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Дата в формате YYYY-MM-DD")
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT title,scheduled_at FROM lectures WHERE code=%s", (code,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
+        await c.execute("UPDATE lectures SET scheduled_at=%s WHERE code=%s", (nd, code))
+        verb = "перенесена на" if row[1] else "назначена на"
+        await _notify(c, "lecture_scheduled", f"Новая дата: {row[0]}",
+                      f"«{row[0]}» {verb} {nd.strftime('%d.%m.%Y')}.", by,
+                      {"code": code, "action": "scheduled", "date": nd.isoformat()})
+    return {"ok": True}
+
+
+@app.post("/api/lectures")
+async def lecture_create(body: LectureIn, claims: dict = Depends(require_staff)) -> dict:
+    """Добавить лекцию (план ведёт лектор). Возвращает code новой лекции."""
+    import uuid
+    code = "u" + uuid.uuid4().hex[:10]
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute(
+            "INSERT INTO lectures(code,week,seq,block,title,topic,outcomes,skills,practice,position) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (code, body.week, body.seq, body.block, body.title, body.topic,
+             "|".join(body.outcomes), ",".join(body.skills), body.practice, body.week * 100 + body.seq))
+    return {"ok": True, "code": code}
+
+
+@app.put("/api/lectures/{code}")
+async def lecture_update(code: str, body: LectureIn, claims: dict = Depends(require_staff)) -> dict:
+    """Редактировать лекцию (дату/статус не трогаем — они управляются отдельно)."""
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute("SELECT id FROM lectures WHERE code=%s", (code,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Лекции {code} нет")
+        await c.execute(
+            "UPDATE lectures SET week=%s, seq=%s, block=%s, title=%s, topic=%s, "
+            "outcomes=%s, skills=%s, practice=%s, position=%s WHERE code=%s",
+            (body.week, body.seq, body.block, body.title, body.topic,
+             "|".join(body.outcomes), ",".join(body.skills), body.practice,
+             body.week * 100 + body.seq, code))
+    return {"ok": True}
+
+
+@app.delete("/api/lectures/{code}")
+async def lecture_delete(code: str, claims: dict = Depends(require_staff)) -> dict:
+    async with db._conn() as c:  # noqa: SLF001
+        await c.execute("DELETE FROM lectures WHERE code=%s", (code,))
+    return {"ok": True}
 
 
 @app.get("/api/assignments")
@@ -423,12 +555,29 @@ def _course_week() -> tuple[int, date]:
     return (0 if delta < 0 else min(settings.course_weeks, delta // 7 + 1)), start
 
 
+def _effective_date(week: int, scheduled_at, start: date) -> date:
+    """Фактическая дата лекции: явно назначенная лектором или расчётная от старта."""
+    if scheduled_at:
+        return scheduled_at if isinstance(scheduled_at, date) else date.fromisoformat(str(scheduled_at)[:10])
+    return start + timedelta(days=(max(1, week) - 1) * 7)
+
+
+async def _notify(c, kind: str, title: str, body: str, by: str, payload: dict | None = None) -> None:
+    """Кладёт событие в outbox (его дренирует Telegram-бот) и зеркалит в анонсы портала."""
+    await c.execute(
+        "INSERT INTO notifications(kind,title,body,payload,created_by) VALUES(%s,%s,%s,%s,%s)",
+        (kind, title, body, json.dumps(payload or {}, ensure_ascii=False), by))
+    await c.execute("INSERT INTO announcements(title,body,created_by) VALUES(%s,%s,%s)",
+                    (title, body, by))
+
+
 @app.get("/api/dashboard")
 async def dashboard(claims: dict = Depends(verify)) -> dict:
     sub = claims["sub"]
     week, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
-        lecs = await (await c.execute("SELECT week,title,topic FROM lectures ORDER BY week")).fetchall()
+        lecs = await (await c.execute(
+            "SELECT code,week,seq,title,topic,scheduled_at,status FROM lectures ORDER BY week,seq")).fetchall()
         asgs = await (await c.execute("SELECT id,week,title FROM assignments ORDER BY week")).fetchall()
         accepted = {r[0] for r in await (await c.execute(
             "SELECT assignment_id FROM submissions WHERE student_id=%s AND status='accepted'", (sub,))).fetchall()}
@@ -439,20 +588,37 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         emb = (await (await c.execute(
             "SELECT COUNT(*) FROM cost_journal WHERE student_id=%s AND kind='embed'", (sub,))).fetchone())[0]
         anns = await (await c.execute(
-            "SELECT title,body,created_at FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
-    cur_lec = None
-    for w, t, tp in lecs:
-        if w <= max(1, week):
-            cur_lec = {"week": w, "title": t, "topic": tp}
-    if cur_lec is None and lecs:
-        cur_lec = {"week": lecs[0][0], "title": lecs[0][1], "topic": lecs[0][2]}
+            "SELECT title,body,created_at,attach_url,attach_name "
+            "FROM announcements ORDER BY created_at DESC LIMIT 5")).fetchall()
+    # code,week,seq,title,topic,scheduled_at,status
+    def _eff(r):
+        return _effective_date(r[1], r[5], start)
+    # карта «неделя → последняя лекция недели» (для дедлайнов ДЗ)
+    last_by_week: dict[int, tuple] = {}
+    for r in lecs:
+        if r[1] not in last_by_week or (r[2] or 1) >= (last_by_week[r[1]][2] or 1):
+            last_by_week[r[1]] = r
+    # текущая лекция = ближайшая НЕ проведённая по фактической дате; если все прошли — последняя
+    pending = [r for r in lecs if (r[6] or "planned") != "passed"]
+    pool = pending or lecs
+    cur = min(pool, key=lambda r: (_eff(r), r[1], r[2] or 1)) if pool else None
+    cur_lec = ({"code": cur[0], "week": cur[1], "seq": cur[2], "title": cur[3], "topic": cur[4],
+                "date": _eff(cur).isoformat(), "status": cur[6] or "planned"} if cur else None)
     now = datetime.now(timezone.utc)
     nd = None
+    cand = []
     for aid, aw, at in asgs:
-        due = datetime.combine(start + timedelta(days=aw * 7), datetime.min.time(), tzinfo=timezone.utc)
-        if aid not in accepted and due > now:
-            nd = {"title": at, "week": aw, "due": due.date().isoformat(), "days_left": (due - now).days}
-            break
+        if aid in accepted:
+            continue
+        lw = last_by_week.get(aw)
+        base = _eff(lw) if lw else start + timedelta(days=(max(1, aw) - 1) * 7)
+        due = datetime.combine(base + timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)
+        if due > now:
+            cand.append((due, at, aw))
+    if cand:
+        cand.sort(key=lambda x: x[0])
+        due, at, aw = cand[0]
+        nd = {"title": at, "week": aw, "due": due.date().isoformat(), "days_left": (due - now).days}
     try:
         files = sum(1 for _ in _mc(False).list_objects(settings.minio_bucket, prefix=f"{sub}/", recursive=True))
     except Exception:  # noqa: BLE001
@@ -476,13 +642,17 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
         {"key": "mvp", "title": "MVP", "icon": "🚢", "earned": earned("MVP")},
         {"key": "defense", "title": "Защита", "icon": "🏆", "earned": earned("ащит")},
     ]
+    total_lec = len(lecs)
+    passed_lec = sum(1 for r in lecs if (r[6] or "planned") == "passed")
     return {
         "student": claims.get("preferred_username", "студент"),
         "week": week, "weeks": settings.course_weeks,
-        "progress_pct": round(100 * week / settings.course_weeks) if week else 0,
+        "lectures_done": passed_lec, "lectures_total": total_lec,
+        "progress_pct": round(100 * passed_lec / total_lec) if total_lec else 0,
         "current_lecture": cur_lec, "next_deadline": nd,
         "onboarding": onboarding, "achievements": ach,
-        "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat()} for a in anns],
+        "announcements": [{"title": a[0], "body": a[1], "created_at": a[2].isoformat(),
+                            "attach_url": a[3] or "", "attach_name": a[4] or ""} for a in anns],
     }
 
 
@@ -490,15 +660,19 @@ async def dashboard(claims: dict = Depends(verify)) -> dict:
 async def announcements(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         rows = await (await c.execute(
-            "SELECT title,body,created_by,created_at FROM announcements ORDER BY created_at DESC LIMIT 50")).fetchall()
-    return [{"title": r[0], "body": r[1], "by": r[2], "created_at": r[3].isoformat()} for r in rows]
+            "SELECT title,body,created_by,created_at,attach_url,attach_name "
+            "FROM announcements ORDER BY created_at DESC LIMIT 50")).fetchall()
+    return [{"title": r[0], "body": r[1], "by": r[2], "created_at": r[3].isoformat(),
+             "attach_url": r[4] or "", "attach_name": r[5] or ""} for r in rows]
 
 
 @app.post("/api/admin/announcements")
 async def post_announcement(body: AnnIn, claims: dict = Depends(require_staff)) -> dict:
     async with db._conn() as c:  # noqa: SLF001
-        await c.execute("INSERT INTO announcements(title,body,created_by) VALUES(%s,%s,%s)",
-                        (body.title, body.body, claims.get("preferred_username", "?")))
+        await c.execute(
+            "INSERT INTO announcements(title,body,created_by,attach_url,attach_name) VALUES(%s,%s,%s,%s,%s)",
+            (body.title, body.body, claims.get("preferred_username", "?"),
+             body.attach_url or None, body.attach_name or None))
     return {"ok": True}
 
 
@@ -712,6 +886,29 @@ async def material_upload_direct(file: UploadFile = File(...), claims: dict = De
 async def del_material(filename: str, claims: dict = Depends(require_staff)) -> dict:
     _mc(False).remove_object("materials", filename)
     return {"ok": True}
+
+
+@app.get("/api/dl")
+async def download_material(name: str):
+    """Принудительное скачивание файла из публичного бакета materials (Content-Disposition:
+    attachment). Стрим с ВНУТРЕННЕГО MinIO (без hairpin/presign). Без auth — бакет и так публичный,
+    эндпоинт лишь форсит «скачать», а не «открыть»."""
+    from urllib.parse import quote
+    safe = name.replace("/", "_").replace("\\", "_").replace("..", "_").strip()
+    r = None
+    try:
+        r = _mc(False).get_object("materials", safe)
+        data = r.read()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    finally:
+        if r is not None:
+            try:
+                r.close(); r.release_conn()
+            except Exception:  # noqa: BLE001
+                pass
+    return Response(content=data, media_type="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe)}"})
 
 
 @app.post("/api/admin/lecture-material")
