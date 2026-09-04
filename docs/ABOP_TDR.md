@@ -302,7 +302,7 @@ ABOP не может дать агенту autonomy_level выше, чем в `D
 |---|---|---|
 | **Agent Plane** (ReAct, волны, Blackboard, семьи, память, аудитор) | Реализовано | `cli/ape.py` |
 | **Tool Plane** (клиентские tools поверх шлюза) | Реализовано частично; примитивы `run_python`(docker)/`web_fetch`/`doc_export` — проектируются | `cli/ape.py` (`AGENT_TOOLS`), `server/tools/` |
-| **Data Plane** | MVP-заглушка (csv/json рецепты, локальный store) | `cli/ape.py` (`data_*`) |
+| **Data Plane** | реестр адаптеров (csv/json/http/sqlite/computed) + canonical-схемы + валидация + freshness-гейт + lookup; локальный append-only store | `cli/ape.py` (`data_*`, `register_adapter`) |
 | **Шлюз** (JWT, каскад, RAG, квоты, cost) | Реализовано | `server/` |
 
 ---
