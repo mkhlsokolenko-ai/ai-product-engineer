@@ -76,6 +76,14 @@ ape-mcp                    # поднимет MCP на 127.0.0.1:8787
 [`ABOP_TDR.md`](docs/ABOP_TDR.md) · [`ABOP_RUNTIME_ARCHITECTURE.md`](docs/ABOP_RUNTIME_ARCHITECTURE.md) ·
 [`ABOP_FLEET_OPS.md`](docs/ABOP_FLEET_OPS.md).
 
+### 🛠 Для инженера — точка входа
+
+**Сквозной системный дизайн → [`docs/ABOP_SDD.md`](docs/ABOP_SDD.md)** — как части связаны в жизни + два рыночных
+пробела: **подхват уже работающих агентов** организации (brownfield, LangChain/LangGraph как основа; OpenClaw/Hermes
+через Agent Adapter Layer + governance-конверт — §3) и **как контракты LUDA попадают в ABOP** (Contract Ingress:
+транспорт → валидация схем → привязка к развёртыванию — §4). Решения зафиксированы в [`ABOP_ADR.md`](docs/ABOP_ADR.md)
+(ADR-028 конверт-над-рантаймом, ADR-029 Contract Ingress).
+
 ### Продукт и архитектура (справка)
 
 [`ABOP_PRD.md`](docs/ABOP_PRD.md) · [`ABOP_ADR.md`](docs/ABOP_ADR.md) ·
