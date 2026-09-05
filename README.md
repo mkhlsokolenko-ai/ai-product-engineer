@@ -16,9 +16,9 @@ server/                 FastMCP-сервер (шлюз к моделям + RAG +
   clients.py            RouteAI (LLM+embed), Qdrant, reranker, self-hosted vLLM
   pricing.py            тарифы для cost-журнала
   tools/                инструменты MCP: chat, my_usage, rag_index, rag_search, cost_report
-skills/                 21 скилл для агентов студентов (см. skills/README.md)
+skills/                 37 навыков для агентов (семьи Аналитика/Финансы/Архитектура/Менеджмент + инж)
 examples/               показательный пример для лекции (агент кофейни)
-docs/                   architecture, cost-analysis, alternatives, DEPLOY
+docs/                   architecture, cost-analysis, alternatives, DEPLOY + пакет ABOP (см. ниже)
 docker-compose.yml      MCP + Postgres + Caddy (TLS)
 ```
 
@@ -50,8 +50,44 @@ ape-mcp                    # поднимет MCP на 127.0.0.1:8787
 Студенты работают через **OpenCode CLI** (OSS, OpenAI-совместимый), подключённый к
 курсовому MCP по JWT. Скиллы из `skills/` кладутся в клиент как стартовый набор.
 
+## ABOP — среда разработки агентов (продуктизация ядра)
+
+Ядро (`cli/ape.py` + `server/`) — рабочая база продукта **ABOP** (Agent-Based Operations Platform):
+онтология Семья→Роль→Навык, оркестрация волнами, Data Plane, память, аудитор. Полный пакет документов
+(продукт/архитектура/дизайн/фронт) — в `docs/`.
+
+### 🎨 Для дизайнера — точка входа
+
+**Начинать отсюда → [`docs/ABOP_DESIGN_HANDOFF.md`](docs/ABOP_DESIGN_HANDOFF.md)** — навигатор: порядок
+чтения, карта доков по ролям и **матрица привязки экран↔данные↔исполнение** (чтобы рисовать реальность,
+а не выдумывать). Обязательные доки для отрисовки концепта фронта:
+
+| Док | Что даёт |
+|---|---|
+| [`ABOP_PRD.md`](docs/ABOP_PRD.md) | что рисуем: вкладки, режимы, функции (FR-A/R/G/I/O) |
+| [`ABOP_DESIGN_KIT.md`](docs/ABOP_DESIGN_KIT.md) + [`docs/brand/`](docs/brand/) | токены, компоненты, маскот Эйп, спиннеры, «язык ожидания» |
+| [`ABOP_SCREENS.md`](docs/ABOP_SCREENS.md) | раскладка экранов: зоны, состояния, кликабельность |
+| [`ABOP_OPERATIONS_MAP.md`](docs/ABOP_OPERATIONS_MAP.md) | главный экран Операций: semantic-zoom карта процессов с агентами |
+| [`ABOP_UX_REFINEMENT.md`](docs/ABOP_UX_REFINEMENT.md) + [`ABOP_UX_FIXES.md`](docs/ABOP_UX_FIXES.md) | доработки по ревью + готовые тексты (не сочинять) |
+| [`ABOP_2MIN_TEST.md`](docs/ABOP_2MIN_TEST.md) | критерий приёмки понимания (новичок за 2 мин, gate ≥7/10) |
+| [`ABOP_DESIGN_GAPS.md`](docs/ABOP_DESIGN_GAPS.md) | чего не хватает + вкладка Безопасность + слайдер прав + light-тема |
+
+Привязка к жизни (данные/сущности/исполнение): [`ABOP_API.md`](docs/ABOP_API.md) ·
+[`ABOP_TDR.md`](docs/ABOP_TDR.md) · [`ABOP_RUNTIME_ARCHITECTURE.md`](docs/ABOP_RUNTIME_ARCHITECTURE.md) ·
+[`ABOP_FLEET_OPS.md`](docs/ABOP_FLEET_OPS.md).
+
+### Продукт и архитектура (справка)
+
+[`ABOP_PRD.md`](docs/ABOP_PRD.md) · [`ABOP_ADR.md`](docs/ABOP_ADR.md) ·
+[`ABOP_AOP.md`](docs/ABOP_AOP.md) · [`ABOP_TDR.md`](docs/ABOP_TDR.md) ·
+[`ABOP_ARD.md`](docs/ABOP_ARD.md) · [`AGENT_FAMILIES_GUIDE.md`](docs/AGENT_FAMILIES_GUIDE.md) ·
+[`ABOP_RUNTIME_ARCHITECTURE.md`](docs/ABOP_RUNTIME_ARCHITECTURE.md) (модели/GraphRAG/VRAM) ·
+[`ABOP_FLEET_OPS.md`](docs/ABOP_FLEET_OPS.md) (управление флотом в проде).
+
+---
+
 ## Статус
 
-Каркас v0.1: рабочий MCP-сервер, 21 скилл, пример для лекции, cost-анализ и деплой-гайд.
+Каркас v0.1: рабочий MCP-сервер, 37 навыков, пример для лекции, cost-анализ и деплой-гайд.
 Перед потоком: развернуть Keycloak-realm, вписать боевые эндпоинты/ключи в `.env`,
 поднять vLLM с Qwen3.8-27B на арендованной RTX 6000, актуализировать тарифы.
