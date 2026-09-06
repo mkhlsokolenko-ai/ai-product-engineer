@@ -4,6 +4,8 @@
 !.env.example
 bench/.orkey
 bench/report_*.json
+bench/verify_*.json
+data/
 
 # Python
 __pycache__/
