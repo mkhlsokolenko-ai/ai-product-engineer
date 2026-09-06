@@ -59,7 +59,7 @@ LUDA 2 уже имеет: аудит A0–A4, Evidence/Findings, BaselineMeasure
 ## 4. Швы между продуктами
 
 - **LUDA → ABOP (есть, спроектировано):** «Запустить пилот» (экран 09) → эмит `CapabilityRequest / DeploymentContract / BaselineMeasurement` → **Contract Ingress** (ADR-029, SDD §4) → Deployment в ABOP (экран 10). Автономия ABOP ≤ DeploymentContract.
-- **ABOP → LUDA (новое, спроектировать):** после/во время пилота ABOP публикует фактические метрики прогона (время/ошибки/MIR/стоимость) → LUDA подтягивает на экран 11 «baseline vs факт». Небольшой канал: ABOP отдаёт `RunMetrics{deployment_id, baseline_ref, actuals}` → LUDA сравнивает с сохранённым BaselineMeasurement. Замыкает цикл LUDA↔ABOP (дифференциатор).
+- **ABOP → LUDA (спроектировано — `ABOP_SDD.md §4-bis`):** после/во время пилота ABOP агрегирует `RunMetrics{deployment_id, baseline_ref, actuals, provenance, governance}` (схема `abop.run_metrics/1.0`, те же ключи метрик, что в BaselineMeasurement) → транспорт push/pull/реестр → LUDA валидирует на границе и сравнивает с сохранённым BaselineMeasurement на экране 11 «baseline vs факт». Дрейф actuals от baseline → ре-аттестация → новый контракт (цикл замыкается). ABOP отдаёт только агрегаты+провенанс, не сырьё (egress-инвариант). Замыкает цикл LUDA↔ABOP (дифференциатор).
 - **Сквозной journey:** SSO (Keycloak, общий) + единая DS + бесшовный переход «Решение(LUDA) → Пилот(ABOP) → Результат(LUDA)» — владелец воспринимает как один продукт, хотя это два приложения.
 
 ---

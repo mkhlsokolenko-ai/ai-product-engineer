@@ -124,6 +124,48 @@ LUDA bundle → POST /api/contracts/ingest
 
 ---
 
+## 4-bis. Обратная петля результата (ABOP → LUDA) ⭐
+
+**Пробел (ADR-031):** Contract Ingress (§4) — это LUDA→ABOP. Но цикл замыкается только если **факт исполнения возвращается в LUDA** для сравнения с baseline. Без этого экран «baseline vs факт» (бриф экран 11) нечем наполнить. Вот обратный канал.
+
+### 4-bis.1. Что публикует ABOP
+После/во время пилота ABOP агрегирует **фактические метрики прогонов** развёртывания в контракт `abop.run_metrics/1.0`:
+```
+RunMetrics {
+  deployment_id,                    // какое развёртывание
+  baseline_ref: {audit_id, baseline_version},  // с каким снимком LUDA сравнивать (из ContractSet §4)
+  window: {from, to},               // окно агрегации
+  actuals: {                        // ТЕ ЖЕ метрики, что в BaselineMeasurement (сопоставимость)
+    time_to_close, manual_intervention_rate, first_time_right, cost_per_run, ...
+  },
+  provenance: {run_ids[], instance_ids[], n_runs, cost_journal_ref},  // чем подтверждается (аудируемо)
+  governance: {autonomy_used, hitl_count, envelope_violations},       // как шло под конвертом
+  emitted_at
+}
+```
+**Инвариант сопоставимости:** `actuals` использует те же ключи метрик, что `BaselineMeasurement.metrics` — иначе сравнение бессмысленно. Схема метрик приходит из baseline (LUDA — источник истины по составу метрик процесса).
+
+### 4-bis.2. Транспорт (симметрично §4.2)
+| Опция | Как |
+|---|---|
+| **Push** | ABOP по завершении окна шлёт `POST {luda}/api/run-metrics/ingest` |
+| **Pull** | LUDA тянет `GET {abop}/api/deployments/{id}/metrics?window=` |
+| **Реестр** | общий стор по `deployment_id`+`audit_id` |
+
+Как и в §4 — **только версионированные схемы**, без общего кода. Провенанс (`run_ids`, `cost_journal_ref`) обязателен: LUDA показывает не «−34%», а «−34%, подтверждено N прогонами».
+
+### 4-bis.3. Что делает LUDA с этим
+- Экран **«baseline vs факт»** (бриф 11): `BaselineMeasurement.metrics` (план) ↔ `RunMetrics.actuals` (факт) → дельта по каждой метрике + провенанс.
+- **Дрейф-детекция:** actuals уезжают от baseline → сигнал на **ре-аттестацию** (может изменить автономию → новый контракт → §4.5, цикл замыкается).
+- **Обоснование эффекта:** фактический ROI/экономия для decision-карточки следующего процесса — доказательно, не прогноз.
+
+### 4-bis.4. Инварианты
+- ABOP публикует **только агрегаты и провенанс-ссылки**, НЕ сырьё прогонов (данные не покидают периметр сверх необходимого — egress-инвариант).
+- LUDA валидирует `abop.run_metrics/1.0` на границе (как ABOP валидирует `luda.*` в §4.3) — двусторонняя граница доверия.
+- Метрики без `baseline_ref` не принимаются (не с чем сравнивать).
+
+---
+
 ## 5. Сквозные потоки (end-to-end, для инженеров)
 
 **П1 · Нативный агент под контрактом:** LUDA-аудит → bundle → Ingress(§4) → сборка в канве (навыки покрывают CapabilityRequest) → тест под конвертом → Паспорт(автономия≤DeploymentContract) → Развёртывание(триггер) → инстансы-прогоны(волны на MoE) → аудит/cost → Fleet-мониторинг.
@@ -133,6 +175,8 @@ LUDA bundle → POST /api/contracts/ingest
 **П3 · Данные и знания:** прогон → `data_query` (Data Plane факты, freshness) + `knowledge_search` (sLAVA/GraphRAG знания с провенансом) → навык с `cite` не выдумывает.
 
 **П4 · Эксплуатация:** развёртывание → триггер(webhook Data Plane/расписание) → инстанс(помеченный прогон) → governance на экземпляре → карта Операций(живые Эйп) → дрейф vs BaselineMeasurement → ре-аттестация/откат версии.
+
+**П5 · Замыкание цикла (ABOP→LUDA):** прогоны накопили факт → ABOP агрегирует `RunMetrics`(§4-bis) → LUDA сравнивает с BaselineMeasurement на экране «baseline vs факт» → дрейф → ре-аттестация → новый контракт(§4.5). Цикл LUDA↔ABOP замкнут: диагноз → исполнение → факт → новый диагноз.
 
 ---
 
@@ -144,6 +188,7 @@ LUDA bundle → POST /api/contracts/ingest
 | Data Plane (адаптеры/canonical/freshness) | ✅ есть | `cli/ape.py` `data_*` |
 | Governance ядра (mode/egress/cite, HITL, автономия, аудитор) | ✅ есть (в ядре) | `ape.py` `SKILL_SAFETY`/`_audit_gate` |
 | **Contract Ingress** (LUDA→ABOP) | ❌ спроектирован (§4), не реализован | новый `POST /api/contracts/ingest` |
+| **Обратная петля результата** (ABOP→LUDA, RunMetrics) | ❌ спроектирована (§4-bis), не реализована | новый `GET /api/deployments/{id}/metrics` / push в LUDA |
 | **Agent Adapter Layer** (LangGraph/wrap/MCP-tools внешним) | ❌ спроектирован (§3), не реализован | новый модуль AAL + Governance Wrapper |
 | RUN/STREAM (инстансы+SSE) | ⏳ task #15 | `web_api` + вынос `cmd_agents` |
 | Fleet (реестр/инстансы) | ❌ модель есть (TDR §13), не реализован | `web_api` `/api/deployments,/instances` |
