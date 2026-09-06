@@ -44,12 +44,24 @@
 > подстроки (`ARCH_MARKER_QX7` ⊂ rese`ARCH_MARKER_QX7`), не sLAVA. Точный поиск по
 > границе слова подтвердил чистую изоляцию.
 
-## Профили ретривера (доработка)
+## Профили ретривера per-family (✅ реализовано)
 
-Сейчас все несемейные — `reglament_ru` (дефолт). Заложенная per-family дифференциация:
-finance/engineering → BM25-гибрид (точные коды/артикулы/статьи), research/analytics →
-семантика. Требует создания профилей в `profiles/` sLAVA (сейчас доступны legal_ru/
-reglament_ru/support_ru) — отдельная доработка, на изоляцию не влияет.
+Два архетипа созданы и привязаны к коллекциям (эмбеддер тот же e5-large 1024 → без переиндексации):
+
+| Профиль | Семьи | Настройка |
+|---|---|---|
+| `family_precise_ru` | finance, engineering | чанк 512, top_k 24, rerank_pool 16, порог 0.03 (шире реранк, не терять точные коды), стиль «дословно номера/коды» |
+| `family_semantic_ru` | analytics, architecture, management, research, critic, decisions | чанк 768, top_k 20, порог 0.05, стиль «объясни суть метода» |
+
+Реально работающие рычаги (читаются per-collection на query): `search` (top_k/rerank_pool/
+threshold) и `answer.style/max_tokens` — применяются сразу. `chunking` — к существующим данным
+после reindex, к новым — сразу. Ретрив под новыми профилями проверен (4/4, данные целы).
+
+**Про BM25-гибрид (честное ограничение):** настоящий dense+sparse RRF в sLAVA — ГЛОБАЛЬНЫЙ
+флаг `search.hybrid.enabled` + миграция коллекции (`eval/migrate_hybrid.py`), НЕ ключ профиля,
+и выключен по eval-гейту (на 25k давал регресс Recall@5 0.84 vs 0.89). Для точных доменов при
+росте корпуса (100k+) — включить гибрид на этих коллекциях после рекалибровки порогов. Профили
+YAML — `slava/profiles/family_precise_ru.yaml`, `family_semantic_ru.yaml`.
 
 ## Дальше
 
