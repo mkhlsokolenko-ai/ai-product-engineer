@@ -4,18 +4,32 @@
 Дефолтный `tenant_id` коллекции = имя семьи; профиль ретривера привязан per-collection.
 Создано/проверено на боевой sLAVA через ssh-джамп (я → сервер-2 → сервер-1).
 
-## 8 семейных коллекций
+## 8 семейных коллекций (наполнены реальными корпусами)
 
-| Семья | Коллекция | Профиль | tenant_id | Статус |
-|---|---|---|---|---|
-| finance | slava_fam_finance | legal_ru | demo | ФЗ-402, 6 чанков — цепочка 5/5 (CHAIN_RESULTS) |
-| analytics | slava_fam_analytics | reglament_ru | analytics | маркер-seed |
-| architecture | slava_fam_architecture | reglament_ru | architecture | маркер-seed |
-| management | slava_fam_management | reglament_ru | management | маркер-seed |
-| research | slava_fam_research | reglament_ru | research | маркер-seed |
-| engineering | slava_fam_engineering | reglament_ru | engineering | маркер-seed |
-| critic | slava_fam_critic | reglament_ru | critic | маркер-seed |
-| decisions | slava_fam_decisions | reglament_ru | decisions | маркер-seed |
+| Семья | Коллекция | Профиль | tenant_id | Корпус | Доменный ретрив |
+|---|---|---|---|---|---|
+| finance | slava_fam_finance | legal_ru | demo | ФЗ-402 + НК РФ ставки (11 чанков) | НДС 20% ✓ |
+| analytics | slava_fam_analytics | reglament_ru | analytics | unit-экономика/воронка/когорты (5) | LTV:CAC ≥3 ✓ |
+| architecture | slava_fam_architecture | reglament_ru | architecture | гексагон/SOLID/микросервисы (5) | порты изолируют домен ✓ |
+| management | slava_fam_management | reglament_ru | management | RACI/Scrum/Канбан/риски (6) | Accountable один ✓ |
+| research | slava_fam_research | reglament_ru | research | дистилляция/обзоры/A-B (5) | soft targets ✓ |
+| engineering | slava_fam_engineering | reglament_ru | engineering | HTTP/транзакции/CI-CD (6) | PUT идемпотентен ✓ |
+| critic | slava_fam_critic | reglament_ru | critic | искажения/red team (6) | ошибка выжившего ✓ |
+| decisions | slava_fam_decisions | reglament_ru | decisions | Эйзенхауэр/дерево решений (6) | срочность×важность ✓ |
+
+**Корпуса** — выверенные доменные справочники (законы/стандарты/методологии), реальные проверяемые
+знания, не сканы первоисточников заказчика. Реальный клиентский корпус грузится так же через `/ingest`.
+Файлы в `data/` (gitignore, по CLAUDE.md «код ≠ данные»).
+
+## Доменный ретрив: ✅ 8/8
+
+Доменный вопрос к каждой семье → sLAVA достаёт релевантный чанк из ЕЁ корпуса, агент цитирует факт
+(`[n]`). Все 8 семей ответили своим корпусом с ожидаемым фактом, fallback=False.
+
+## Кросс-изоляция на реальных данных: ✅
+
+Финансовый вопрос («ставка НДС») → семья `engineering` → **fallback=True, src=0** («Недостаточно данных»).
+Семья не видит чужой корпус и НЕ выдумывает — анти-галлюцинация держится на реальном содержании.
 
 ## Проверка изоляции тенантов: ✅ 8/8 держится
 
