@@ -28,6 +28,11 @@ import time
 
 import httpx
 
+try:  # Windows-консоль (cp1251) не тянет юникод в выводе — форсируем UTF-8
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # --- Пороги гейта (перед арендой бокса). cite — HARD-constraint (CLAUDE.md §анти-галлюцинация). ---
 GATE = {
     "cite": 0.90,       # HARD: доля корректных cite/fallback; выдумка = провал
@@ -140,6 +145,11 @@ def grade(case: dict, answer: str) -> tuple[bool, str]:
         if "verdict_key" in exp and obj.get(exp["verdict_key"]) != exp.get("verdict"):
             return False, f"вердикт {obj.get(exp['verdict_key'])}≠{exp.get('verdict')}"
         return True, "ok"
+
+    if g == "contains_any":  # принять любой из синонимов (устойчиво к перефразировке)
+        opts = exp if isinstance(exp, list) else exp.get("any", [])
+        hit = next((o for o in opts if o.lower() in low), None)
+        return hit is not None, (f"~{hit}" if hit else "нет синонимов")
 
     if g == "equals":
         return low.strip() == str(exp).strip().lower(), "eq"
