@@ -34,7 +34,8 @@ class Settings:
     # RouteAI
     routeai_base_url: str = os.getenv("ROUTEAI_BASE_URL", "https://routerai.ru/api/v1")
     routeai_api_key: str = os.getenv("ROUTEAI_API_KEY", "")
-    # Каскады по профилю: кодинг -> Qwen, исследования -> только DeepSeek.
+    # Каскады по профилю (все на RouteAI): код -> Qwen3.8-27B, агенты/standard ->
+    # выбранная гейтом qwen3-30b-a3b-instruct-2507, исследования -> DeepSeek.
     code_cascade: list[str] = field(
         default_factory=lambda: _split(
             os.getenv("ROUTEAI_CODE_CASCADE", "qwen/qwen3.8-27b,deepseek/deepseek-v4-pro")
@@ -45,9 +46,11 @@ class Settings:
             os.getenv("ROUTEAI_RESEARCH_CASCADE", "deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash")
         )
     )
+    # standard = агентский движок: победитель гейта (bench/RESULTS.md) первым, DeepSeek запасным.
     standard_cascade: list[str] = field(
         default_factory=lambda: _split(
-            os.getenv("ROUTEAI_STANDARD_CASCADE", "qwen-plus,deepseek/deepseek-v4-flash")
+            os.getenv("ROUTEAI_STANDARD_CASCADE",
+                      "qwen/qwen3-30b-a3b-instruct-2507,deepseek/deepseek-v4-flash")
         )
     )
     embed_model: str = os.getenv("ROUTEAI_EMBED_MODEL", "bge-m3")
