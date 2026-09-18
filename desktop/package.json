@@ -1,6 +1,6 @@
 {
   "name": "ape-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "APE Desktop — модульная оболочка курса (Electron + Python sidecar)",
   "main": "electron/main.js",
   "scripts": {
@@ -23,7 +23,7 @@
       { "from": "dist/ape-sidecar", "to": "ape-sidecar" }
     ],
     "publish": [
-      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "ai-product-engineer" }
+      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "ai-product-engineer", "releaseType": "release" }
     ],
     "win": {
       "target": ["nsis"],
