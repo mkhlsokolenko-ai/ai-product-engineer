@@ -1,4 +1,6 @@
 fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.6
-# auth.py / gateway.py / db.py — только stdlib (urllib, http.server, sqlite3), доп. пакеты не нужны.
+# auth.py / gateway.py / db.py — только stdlib (urllib, http.server, sqlite3).
+# md-экспорт — stdlib; pdf-экспорт делает Electron (printToPDF), питон-либа не нужна.
+# docx/xlsx (python-docx, openpyxl) — добавим в v0.1.3 после проверки PyInstaller-бандла.

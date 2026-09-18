@@ -5,6 +5,19 @@
 const M = "/api/modules/chat";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
+// Минимальный безопасный markdown → HTML (сначала escape, потом свои теги).
+function md(t) {
+  let h = esc(t);
+  h = h.replace(/```([\s\S]*?)```/g, (_m, c) =>
+    `<pre style="background:var(--bg0);border:1px solid var(--b1);border-radius:8px;padding:10px;overflow:auto;margin:6px 0"><code>${c.replace(/^\n/, "")}</code></pre>`);
+  h = h.replace(/`([^`\n]+)`/g, '<code style="background:var(--raised);padding:1px 5px;border-radius:5px">$1</code>');
+  h = h.replace(/^\s*#{1,4}\s+(.*)$/gm, "<b>$1</b>");
+  h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
+  h = h.replace(/^\s*[-*]\s+(.*)$/gm, "• $1");
+  return h;
+}
+
 // ── универсальная модалка (замена native prompt/confirm, которых в Electron нет) ──
 function modal(title, bodyHTML, onOk) {
   const ov = document.createElement("div");
@@ -81,16 +94,28 @@ export async function mount(root, ctx) {
     };
   }
 
-  function bubble(m) {
+  function bubble(m, idx) {
     const mine = m.role === "user";
     const meta = m.meta && m.meta.model
       ? `<div class="faint mono" style="font-size:10px;margin-top:4px">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽ · ${m.meta.output_tokens ?? 0} tok</div>` : "";
+    const body = mine ? esc(m.content) : md(m.content);
+    const acts = mine ? "" : `<div style="display:flex;gap:12px;margin-top:5px">
+      <span data-copy="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">⧉ копировать</span>
+      <span data-regen="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">↻ ещё раз</span></div>`;
     return `<div class="bubble" style="max-width:80%;align-self:${mine ? "flex-end" : "flex-start"}">
-      <div class="bcontent" style="background:${mine ? "var(--accent-bg)" : "var(--panel)"};border:1px solid var(--b1);border-radius:12px;padding:10px 13px;white-space:pre-wrap;font-size:13.5px;line-height:1.5">${esc(m.content)}</div>${meta}</div>`;
+      <div class="bcontent" style="background:${mine ? "var(--accent-bg)" : "var(--panel)"};border:1px solid var(--b1);border-radius:12px;padding:10px 13px;white-space:pre-wrap;font-size:13.5px;line-height:1.5">${body}</div>${meta}${acts}</div>`;
   }
   function renderMessages() {
     $("msgs").innerHTML = messages.map(bubble).join("") ||
       `<div class="faint" style="margin:auto;text-align:center">Напиши сообщение ниже.<br>Профиль, скиллы и инструменты — в панели ввода.</div>`;
+    $("msgs").querySelectorAll("[data-copy]").forEach((e) => e.onclick = () => {
+      navigator.clipboard.writeText(messages[+e.dataset.copy].content);
+      const o = e.textContent; e.textContent = "✓ скопировано"; setTimeout(() => { e.textContent = o; }, 1500);
+    });
+    $("msgs").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => {
+      const prev = messages[+e.dataset.regen - 1];
+      if (prev && prev.role === "user") sendPrompt(prev.content);
+    });
     $("msgs").scrollTop = $("msgs").scrollHeight;
   }
 
@@ -123,6 +148,7 @@ export async function mount(root, ctx) {
         <button class="btn sm" id="tOcr" title="Распознать текст с изображения/скана">🔎 OCR</button>
         <button class="btn sm" id="tNlp" title="NLP: извлечение сущностей/классификация">🧠 NLP</button>
         <button class="btn sm" id="agentsBtn" title="Собрать команду агентов под задачу">🕸 Агенты</button>
+        <button class="btn sm" id="expBtn" title="Сохранить чат в Загрузки">📥 Экспорт</button>
         <input type="file" id="fileIn" accept=".txt,.md,.csv,.json" style="display:none" />
       </div>
       <div style="display:flex;gap:8px">
@@ -142,6 +168,15 @@ export async function mount(root, ctx) {
     $("tOcr").onclick = () => alert("OCR: модуль ocr-tesseract в разработке (см. roadmap). Пока прикладывай текстовые файлы через RAG.");
     $("tNlp").onclick = () => alert("NLP: модуль извлечения сущностей/классификации в разработке (см. roadmap).");
     $("agentsBtn").onclick = openAgents;
+    $("expBtn").onclick = () => {
+      const ov = modal("Экспорт чата в «Загрузки»", `<div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-f="md">Markdown (.md)</button>
+        <button class="btn" data-f="pdf">PDF (.pdf)</button>
+        <button class="btn" data-f="docx" disabled title="в v0.1.3">Word (.docx)</button>
+        <button class="btn" data-f="xlsx" disabled title="в v0.1.3">Excel (.xlsx)</button>
+      </div>`, () => true);
+      ov.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { if (!b.disabled) { exportThread(b.dataset.f); ov.remove(); } });
+    };
     $("inp").focus();
   }
 
@@ -157,19 +192,28 @@ export async function mount(root, ctx) {
     renderMessages();
   }
 
-  async function send() {
-    const inp = $("inp"); const text = inp.value.trim(); if (!text || !cur) return;
-    inp.value = "";
+  let curAbort = null;
+  function setSending(on) {
+    const b = $("sendBtn"); if (!b) return;
+    b.textContent = on ? "⏹ Стоп" : "Отправить";
+    b.classList.toggle("primary", !on);
+    b.onclick = on ? () => { if (curAbort) curAbort.abort(); } : send;
+  }
+  function send() { const inp = $("inp"); const t = inp.value; inp.value = ""; sendPrompt(t); }
+
+  async function sendPrompt(text) {
+    text = (text || "").trim(); if (!text || !cur) return;
     const wasNew = messages.length === 0;
     messages.push({ role: "user", content: text, meta: {} });
     const asst = { role: "assistant", content: "", meta: {} };
     messages.push(asst); renderMessages();
     const el = $("msgs").querySelector(".bubble:last-child .bcontent");
-    const setTxt = (t) => { if (el) { el.textContent = t; $("msgs").scrollTop = $("msgs").scrollHeight; } };
+    const setTxt = (t2) => { if (el) { el.textContent = t2; $("msgs").scrollTop = $("msgs").scrollHeight; } };
     setTxt("…");
+    curAbort = new AbortController(); setSending(true);
     try {
       const resp = await fetch(ctx.base + M + "/threads/" + cur.id + "/send-stream",
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text }) });
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text }), signal: curAbort.signal });
       if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
       const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
       while (true) {
@@ -185,10 +229,28 @@ export async function mount(root, ctx) {
           else if (d.done && d.meta) { asst.meta = d.meta; }
         }
       }
-    } catch (e) { asst.content = asst.content || ("Сбой: " + e.message); }
-    renderMessages(); // финальный рендер (с meta: модель/стоимость/токены)
+    } catch (e) {
+      if (e.name === "AbortError") asst.content += "\n\n⏹ остановлено";
+      else asst.content = asst.content || ("Сбой: " + e.message);
+    }
+    curAbort = null; setSending(false);
+    renderMessages();
     if (wasNew && (cur.title === "Новый чат")) { try { const a = await api(M + "/threads/" + cur.id + "/autotitle", { method: "POST" }); if (a.ok) cur.title = a.title; } catch {} }
     loadThreads();
+  }
+
+  async function exportThread(fmt) {
+    if (!cur) return;
+    if (fmt === "pdf") {
+      if (!(window.ape && window.ape.exportPdf)) { alert("PDF доступен только в установленном приложении."); return; }
+      const html = `<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;color:#111}h1{font-size:20px}h2{margin:16px 0 4px;font-size:14px}pre{background:#f4f4f4;padding:8px;border-radius:6px;white-space:pre-wrap}</style></head><body><h1>${esc(cur.title)}</h1>` +
+        messages.map((m) => `<h2>${m.role === "user" ? "Вы" : "Ассистент"}</h2><div style="white-space:pre-wrap">${esc(m.content)}</div>`).join("") + `</body></html>`;
+      const r = await window.ape.exportPdf(html, (cur.title || "chat").replace(/[^\w\-. ]/g, "_").slice(0, 60) + ".pdf");
+      alert(r.ok ? "Сохранено в Загрузки:\n" + r.path : "Ошибка PDF: " + r.error);
+      return;
+    }
+    const r = await api(M + "/threads/" + cur.id + "/export", { method: "POST", body: JSON.stringify({ format: fmt }) });
+    alert(r.ok ? "Сохранено в Загрузки:\n" + r.path : "Не удалось: " + r.error);
   }
 
   async function attach(e) {

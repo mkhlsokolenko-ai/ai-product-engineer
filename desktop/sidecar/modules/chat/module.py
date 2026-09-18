@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -63,6 +65,19 @@ class AttachIn(BaseModel):
 class AgentsIn(BaseModel):
     task: str
     roles: list[str] = []   # id из ROLE_PRESETS; пусто → DEFAULT_ROLES
+
+
+class ExportIn(BaseModel):
+    format: str = "md"      # md | docx | xlsx (pdf делает Electron через printToPDF)
+
+
+def _downloads() -> Path:
+    d = Path.home() / "Downloads"
+    return d if d.exists() else Path.home()
+
+
+def _safe(name: str) -> str:
+    return re.sub(r"[^\w\-. ]", "_", name or "").strip()[:60] or "chat"
 
 
 def _sid(thread_id: int) -> str:
@@ -182,6 +197,50 @@ def del_file(thread_id: int, att_id: int) -> dict:
 def agent_roles() -> list[dict]:
     return [{"id": k, "name": v[0], "brief": v[1], "default": k in DEFAULT_ROLES}
             for k, v in ROLE_PRESETS.items()]
+
+
+# ── экспорт треда в файл в «Загрузки» (md/docx/xlsx; pdf делает Electron) ──
+@router.post("/threads/{thread_id}/export")
+def export_thread(thread_id: int, body: ExportIn) -> dict:
+    th = db.q("SELECT title FROM threads WHERE id=?", (thread_id,))
+    if not th:
+        return {"ok": False, "error": "no_thread"}
+    title = th[0]["title"] or "chat"
+    msgs = db.q("SELECT role,content,meta FROM messages WHERE thread_id=? ORDER BY id", (thread_id,))
+    base, out, fmt = _safe(title), _downloads(), body.format.lower()
+    try:
+        if fmt == "md":
+            p = out / (base + ".md")
+            lines = [f"# {title}\n"]
+            for m in msgs:
+                who = "🧑 Вы" if m["role"] == "user" else "🤖 Ассистент"
+                lines.append(f"\n## {who}\n\n{m['content']}\n")
+            p.write_text("\n".join(lines), encoding="utf-8")
+        elif fmt == "docx":
+            from docx import Document
+            doc = Document()
+            doc.add_heading(title, 0)
+            for m in msgs:
+                doc.add_heading("Вы" if m["role"] == "user" else "Ассистент", level=2)
+                doc.add_paragraph(m["content"])
+            p = out / (base + ".docx")
+            doc.save(str(p))
+        elif fmt == "xlsx":
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "chat"
+            ws.append(["Роль", "Сообщение", "Модель", "Стоимость ₽"])
+            for m in msgs:
+                meta = json.loads(m["meta"] or "{}")
+                ws.append([m["role"], m["content"], meta.get("model", ""), meta.get("cost_rub", "")])
+            p = out / (base + ".xlsx")
+            wb.save(str(p))
+        else:
+            return {"ok": False, "error": "bad_format"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "path": str(p)}
 
 
 # ── отправка сообщения ──

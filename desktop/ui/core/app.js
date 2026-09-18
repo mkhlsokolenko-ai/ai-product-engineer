@@ -73,8 +73,28 @@ async function loadModule(id) {
   }
 }
 
+function renderUpdate(s) {
+  const bar = document.getElementById("updateBar");
+  if (!bar) return;
+  const show = (html, bg) => {
+    bar.style.display = "flex";
+    bar.style.cssText += ";align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--b1);font-size:13px;" + (bg ? "background:var(--accent-bg)" : "background:var(--panel)");
+    bar.innerHTML = html;
+  };
+  if (s.state === "downloading") show(`⬇ Обновление ${s.version ? "v" + s.version : ""} — скачивается ${s.percent || 0}%`);
+  else if (s.state === "available") show(`⬇ Найдено обновление v${s.version} — скачиваю…`);
+  else if (s.state === "ready") {
+    show(`<span style="flex:1">✓ Обновление <b>v${s.version}</b> готово к установке</span>
+      <button class="btn primary sm" id="updNow">Перезапустить и обновить</button>`, true);
+    const b = document.getElementById("updNow");
+    if (b) b.onclick = () => window.ape.updater.install();
+  } else if (s.state === "error") show(`<span class="faint">Апдейтер: ${(s.message || "").slice(0, 120)}</span>`);
+  else bar.style.display = "none"; // checking / none
+}
+
 async function boot() {
   try { const h = await api("/api/health"); const v = document.getElementById("verChip"); if (v) v.textContent = "v" + (h.version || "?"); } catch {}
+  if (window.ape && window.ape.updater) window.ape.updater.onStatus(renderUpdate);
   await renderAuth();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }
   renderNav();

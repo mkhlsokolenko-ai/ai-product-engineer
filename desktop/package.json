@@ -1,6 +1,6 @@
 {
   "name": "ape-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "APE Desktop — модульная оболочка курса (Electron + Python sidecar)",
   "main": "electron/main.js",
   "scripts": {
@@ -9,6 +9,7 @@
     "publish": "electron-builder --win nsis --publish always"
   },
   "dependencies": {
+    "electron-log": "^5.2.0",
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {

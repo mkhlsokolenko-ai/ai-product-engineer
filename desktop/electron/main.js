@@ -1,10 +1,12 @@
 // Electron main: спавнит Python-сайдкар (движок) и рендерит модульный UI поверх него.
 // Оболочка тонкая — вся логика в сайдкаре; окно можно заменить, не трогая движок.
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
 const http = require("http");
+const fs = require("fs");
+const os = require("os");
 
 // Удалённый UI: если задан APE_UI_URL — грузим фронт с сервера (правки без релиза),
 // с фоллбеком на локальную копию из asar (офлайн/недоступность). Пусто → всегда локально.
@@ -83,7 +85,11 @@ async function createWindow() {
     height: 820,
     minWidth: 900,
     backgroundColor: "#0B0F14",
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
   // внешние ссылки — в системный браузер (например, окно логина при необходимости)
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -99,24 +105,56 @@ async function createWindow() {
   } else {
     win.loadFile(localIndex, { query: { api: apiBase } });
   }
+  win.webContents.once("did-finish-load", setupUpdater); // UI уже слушает события апдейтера
 }
 
-// Тихий авто-апдейт всего приложения (сайдкар+оболочка+UI-fallback) с GitHub Releases.
-// Ставится на перезапуск; пользователю не нужно переустанавливать вручную.
-function checkUpdates() {
+// Видимый авто-апдейт: события electron-updater транслируем в UI (баннер с кнопкой).
+let updater = null;
+function setupUpdater() {
   if (!app.isPackaged) return;
   try {
     const { autoUpdater } = require("electron-updater");
+    updater = autoUpdater;
+    try { autoUpdater.logger = require("electron-log"); autoUpdater.logger.transports.file.level = "info"; } catch (e) { /* лог опционален */ }
     autoUpdater.autoDownload = true;
-    autoUpdater.on("error", (e) => console.error("[updater]", e && e.message));
-    autoUpdater.on("update-downloaded", (i) => console.log("[updater] downloaded", i && i.version));
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.autoInstallOnAppQuit = true;
+    const send = (s) => { if (win && !win.isDestroyed()) win.webContents.send("updater:status", s); };
+    autoUpdater.on("checking-for-update", () => send({ state: "checking" }));
+    autoUpdater.on("update-available", (i) => send({ state: "available", version: i && i.version }));
+    autoUpdater.on("update-not-available", () => send({ state: "none" }));
+    autoUpdater.on("download-progress", (p) => send({ state: "downloading", percent: Math.round(p.percent || 0) }));
+    autoUpdater.on("update-downloaded", (i) => send({ state: "ready", version: i && i.version }));
+    autoUpdater.on("error", (e) => send({ state: "error", message: String((e && e.message) || e) }));
+    autoUpdater.checkForUpdates();
   } catch (e) {
     console.error("[updater] недоступен:", e && e.message);
   }
 }
 
-app.whenReady().then(createWindow).then(checkUpdates);
+// действия из UI
+ipcMain.handle("updater:check", () => { try { updater && updater.checkForUpdates(); } catch (e) { /* noop */ } });
+ipcMain.handle("updater:install", () => { try { updater && updater.quitAndInstall(); } catch (e) { /* noop */ } });
+
+// экспорт в PDF: рендерим HTML в скрытом окне → printToPDF → в «Загрузки» (кириллица ок, Chromium)
+ipcMain.handle("export:pdf", async (_e, { html, filename }) => {
+  let w = null;
+  try {
+    w = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+    await w.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html || "<html></html>"));
+    const pdf = await w.webContents.printToPDF({ printBackground: true, margins: { marginType: "default" } });
+    const dl = path.join(os.homedir(), "Downloads");
+    const dir = fs.existsSync(dl) ? dl : os.homedir();
+    const p = path.join(dir, filename || "chat.pdf");
+    fs.writeFileSync(p, pdf);
+    return { ok: true, path: p };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  } finally {
+    if (w) w.destroy();
+  }
+});
+
+app.whenReady().then(createWindow);
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
