@@ -18,6 +18,22 @@
   --radius: 12px;
 }
 
+/* Светлая тема — тот же набор переменных, переключается data-theme на <html>. */
+:root[data-theme="light"] {
+  --bg0: #f7f8fa;
+  --panel: #ffffff;
+  --raised: #eef1f5;
+  --b1: #e2e6ec;
+  --ink1: #0b0f14;
+  --ink2: #566372;
+  --ink3: #8b98a5;
+  --accent: #3b6ef5;
+  --accent-bg: rgba(59, 110, 245, 0.12);
+  --ok: #2f9e44;
+  --warn: #b7791f;
+  --crit: #e03131;
+}
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {

@@ -92,7 +92,22 @@ function renderUpdate(s) {
   else bar.style.display = "none"; // checking / none
 }
 
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  const b = document.getElementById("themeBtn");
+  if (b) b.textContent = t === "light" ? "☀️" : "🌙";
+}
+function initTheme() {
+  applyTheme(localStorage.getItem("ape_theme") || "dark");
+  const b = document.getElementById("themeBtn");
+  if (b) b.onclick = () => {
+    const t = (localStorage.getItem("ape_theme") || "dark") === "dark" ? "light" : "dark";
+    localStorage.setItem("ape_theme", t); applyTheme(t);
+  };
+}
+
 async function boot() {
+  initTheme();
   try { const h = await api("/api/health"); const v = document.getElementById("verChip"); if (v) v.textContent = "v" + (h.version || "?"); } catch {}
   if (window.ape && window.ape.updater) window.ape.updater.onStatus(renderUpdate);
   await renderAuth();

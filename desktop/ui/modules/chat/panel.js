@@ -9,7 +9,7 @@ const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt
 function md(t) {
   let h = esc(t);
   h = h.replace(/```([\s\S]*?)```/g, (_m, c) =>
-    `<pre style="background:var(--bg0);border:1px solid var(--b1);border-radius:8px;padding:10px;overflow:auto;margin:6px 0"><code>${c.replace(/^\n/, "")}</code></pre>`);
+    `<div style="position:relative;margin:6px 0"><button class="codecopy" style="position:absolute;top:6px;right:6px;font-size:10.5px;padding:2px 7px;border:1px solid var(--b1);background:var(--panel);color:var(--ink2);border-radius:6px;cursor:pointer">копир.</button><pre style="background:var(--bg0);border:1px solid var(--b1);border-radius:8px;padding:10px;overflow:auto"><code>${c.replace(/^\n/, "")}</code></pre></div>`);
   h = h.replace(/`([^`\n]+)`/g, '<code style="background:var(--raised);padding:1px 5px;border-radius:5px">$1</code>');
   h = h.replace(/^\s*#{1,4}\s+(.*)$/gm, "<b>$1</b>");
   h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
@@ -35,28 +35,59 @@ function modal(title, bodyHTML, onOk) {
   return ov;
 }
 
+// Шаблоны под менеджера для пустого экрана: заголовок · промпт · опц. скилл.
+const TEMPLATES = [
+  ["📝 Письмо клиенту", "Напиши деловое письмо клиенту: <опиши ситуацию и цель>", "email-draft"],
+  ["🗂 Саммари встречи", "Сделай саммари встречи и список задач с ответственными по тексту:\n<вставь заметки>", ""],
+  ["💬 Разобрать отзывы", "Из отзывов ниже вытащи главные боли и 3 действия на неделю:\n<вставь отзывы>", ""],
+  ["🎯 Проверить идею", "Проверь мою идею как скептик-инвестор, без похвал, с аргументами:\n<опиши идею>", "devils-advocate"],
+  ["⚖️ Сравнить варианты", "Сравни варианты по критериям и порекомендуй один:\n<перечисли варианты>", ""],
+  ["📅 План на неделю", "Составь план на неделю по цели с приоритетами и рисками:\n<опиши цель>", ""],
+];
+
 export async function mount(root, ctx) {
   const { api } = ctx;
-  let threads = [], cur = null, messages = [], skills = [], roles = [];
+  let threads = [], cur = null, messages = [], skills = [], roles = [], threadFilter = "";
   try { skills = await api(M + "/skills"); } catch {}
   try { roles = await api(M + "/agent-roles"); } catch {}
 
   root.innerHTML = `
     <div style="display:flex;height:100%">
       <div style="width:270px;flex-shrink:0;border-right:1px solid var(--b1);display:flex;flex-direction:column">
-        <div style="padding:12px"><button class="btn primary" id="newTh" style="width:100%">+ Новый чат</button></div>
+        <div style="padding:12px 12px 6px"><button class="btn primary" id="newTh" style="width:100%">+ Новый чат</button></div>
+        <div style="padding:0 12px 8px"><input id="thSearch" placeholder="Поиск по чатам…" style="width:100%" /></div>
         <div id="thList" style="flex:1;overflow:auto;padding:0 8px"></div>
       </div>
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div id="rightPane" style="flex:1;min-width:0;display:flex;flex-direction:column;position:relative">
+        <div id="dropHint" style="display:none;position:absolute;inset:0;z-index:5;background:var(--accent-bg);border:2px dashed var(--accent);align-items:center;justify-content:center;font-weight:600;color:var(--accent)">Отпусти файл — добавлю в базу знаний</div>
         <div id="msgs" style="flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px"></div>
         <div id="files" style="padding:0 16px"></div>
         <div id="composer" style="border-top:1px solid var(--b1);padding:12px 16px"></div>
       </div>
     </div>`;
   const $ = (id) => root.querySelector("#" + id);
+  $("thSearch").oninput = (e) => { threadFilter = e.target.value.toLowerCase(); renderThreads(); };
+  // drag-drop файлов в правую панель
+  const rp = $("rightPane");
+  rp.addEventListener("dragover", (e) => { e.preventDefault(); if (cur) $("dropHint").style.display = "flex"; });
+  rp.addEventListener("dragleave", (e) => { if (e.relatedTarget === null || !rp.contains(e.relatedTarget)) $("dropHint").style.display = "none"; });
+  rp.addEventListener("drop", async (e) => {
+    e.preventDefault(); $("dropHint").style.display = "none";
+    if (!cur) return;
+    for (const f of [...(e.dataTransfer.files || [])]) { if (/\.(txt|md|csv|json)$/i.test(f.name)) await attachFile(f); }
+  });
+  // горячие клавиши: Ctrl+N — новый чат, Esc — стоп генерации
+  if (window.__apeKeyHandler) document.removeEventListener("keydown", window.__apeKeyHandler);
+  window.__apeKeyHandler = (e) => {
+    if (!root.isConnected) return;
+    if (e.ctrlKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); $("newTh").click(); }
+    else if (e.key === "Escape" && curAbort) { curAbort.abort(); }
+  };
+  document.addEventListener("keydown", window.__apeKeyHandler);
 
   function renderThreads() {
-    $("thList").innerHTML = threads.map((t) => `
+    const list = threads.filter((t) => !threadFilter || (t.title || "").toLowerCase().includes(threadFilter));
+    $("thList").innerHTML = list.map((t) => `
       <div class="th" data-id="${t.id}" style="display:flex;align-items:center;gap:6px;padding:9px 8px;border-radius:9px;cursor:pointer;margin-bottom:3px;background:${cur && t.id === cur.id ? "var(--accent-bg)" : "transparent"}">
         <span class="star" data-id="${t.id}" title="В избранное" style="cursor:pointer">${t.favorite ? "★" : "☆"}</span>
         <div style="flex:1;min-width:0">
@@ -99,15 +130,29 @@ export async function mount(root, ctx) {
     const meta = m.meta && m.meta.model
       ? `<div class="faint mono" style="font-size:10px;margin-top:4px">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽ · ${m.meta.output_tokens ?? 0} tok</div>` : "";
     const body = mine ? esc(m.content) : md(m.content);
-    const acts = mine ? "" : `<div style="display:flex;gap:12px;margin-top:5px">
+    const acts = mine
+      ? `<div style="display:flex;gap:12px;margin-top:5px;justify-content:flex-end"><span data-edit="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">✎ изменить</span></div>`
+      : `<div style="display:flex;gap:12px;margin-top:5px">
       <span data-copy="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">⧉ копировать</span>
       <span data-regen="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">↻ ещё раз</span></div>`;
     return `<div class="bubble" style="max-width:80%;align-self:${mine ? "flex-end" : "flex-start"}">
       <div class="bcontent" style="background:${mine ? "var(--accent-bg)" : "var(--panel)"};border:1px solid var(--b1);border-radius:12px;padding:10px 13px;white-space:pre-wrap;font-size:13.5px;line-height:1.5">${body}</div>${meta}${acts}</div>`;
   }
   function renderMessages() {
-    $("msgs").innerHTML = messages.map(bubble).join("") ||
-      `<div class="faint" style="margin:auto;text-align:center">Напиши сообщение ниже.<br>Профиль, скиллы и инструменты — в панели ввода.</div>`;
+    if (!messages.length) {
+      const cards = TEMPLATES.map((t, i) =>
+        `<div data-tpl="${i}" style="cursor:pointer;border:1px solid var(--b1);background:var(--panel);border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600">${t[0]}</div>`).join("");
+      $("msgs").innerHTML = `<div style="margin:auto;max-width:640px;text-align:center">
+        <div class="faint" style="margin-bottom:14px">С чего начать? Выбери шаблон или просто напиши сообщение.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${cards}</div></div>`;
+      $("msgs").querySelectorAll("[data-tpl]").forEach((e) => e.onclick = async () => {
+        const [, prompt, skill] = TEMPLATES[+e.dataset.tpl];
+        if (skill && cur && !cur.skills.includes(skill)) { cur.skills.push(skill); await saveThread(); renderComposer(); }
+        const inp = $("inp"); if (inp) { inp.value = prompt; inp.focus(); }
+      });
+      return;
+    }
+    $("msgs").innerHTML = messages.map(bubble).join("");
     $("msgs").querySelectorAll("[data-copy]").forEach((e) => e.onclick = () => {
       navigator.clipboard.writeText(messages[+e.dataset.copy].content);
       const o = e.textContent; e.textContent = "✓ скопировано"; setTimeout(() => { e.textContent = o; }, 1500);
@@ -115,6 +160,14 @@ export async function mount(root, ctx) {
     $("msgs").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => {
       const prev = messages[+e.dataset.regen - 1];
       if (prev && prev.role === "user") sendPrompt(prev.content);
+    });
+    $("msgs").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => {
+      const inp = $("inp"); if (inp) { inp.value = messages[+e.dataset.edit].content; inp.focus(); }
+    });
+    $("msgs").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => {
+      const pre = b.parentElement.querySelector("code");
+      navigator.clipboard.writeText(pre ? pre.textContent : "");
+      const o = b.textContent; b.textContent = "✓"; setTimeout(() => { b.textContent = o; }, 1200);
     });
     $("msgs").scrollTop = $("msgs").scrollHeight;
   }
@@ -209,7 +262,7 @@ export async function mount(root, ctx) {
     messages.push(asst); renderMessages();
     const el = $("msgs").querySelector(".bubble:last-child .bcontent");
     const setTxt = (t2) => { if (el) { el.textContent = t2; $("msgs").scrollTop = $("msgs").scrollHeight; } };
-    setTxt("…");
+    setTxt("▍ думает…");
     curAbort = new AbortController(); setSending(true);
     try {
       const resp = await fetch(ctx.base + M + "/threads/" + cur.id + "/send-stream",
@@ -253,13 +306,16 @@ export async function mount(root, ctx) {
     alert(r.ok ? "Сохранено в Загрузки:\n" + r.path : "Не удалось: " + r.error);
   }
 
-  async function attach(e) {
-    const f = e.target.files[0]; if (!f || !cur) return;
+  async function attachFile(f) {
+    if (!f || !cur) return;
+    messages.push({ role: "assistant", content: `📎 индексирую «${f.name}»…`, meta: {} }); renderMessages();
     const text = await f.text();
     const r = await api(M + "/threads/" + cur.id + "/attach", { method: "POST", body: JSON.stringify({ name: f.name, documents: [text] }) });
+    messages.pop();
     messages.push({ role: "assistant", content: r.ok ? `Файл «${f.name}» в базе знаний (${r.indexed} фрагм.) — спрашивай по нему.` : "Не удалось приложить: " + r.error, meta: {} });
-    renderMessages(); renderFiles(); e.target.value = "";
+    renderMessages(); renderFiles();
   }
+  async function attach(e) { const f = e.target.files[0]; await attachFile(f); e.target.value = ""; }
 
   function openAgents() {
     if (!cur) return;
