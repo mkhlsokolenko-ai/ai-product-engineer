@@ -74,6 +74,7 @@ async function loadModule(id) {
 }
 
 async function boot() {
+  try { const h = await api("/api/health"); const v = document.getElementById("verChip"); if (v) v.textContent = "v" + (h.version || "?"); } catch {}
   await renderAuth();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }
   renderNav();
