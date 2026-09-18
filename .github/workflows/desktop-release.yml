@@ -1,0 +1,41 @@
+# Авто-сборка и публикация APE Desktop в GitHub Releases.
+# Триггер: пуш тега вида desktop-vX.Y.Z. Клиенты (electron-updater) подхватят апдейт сами.
+name: desktop-release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: write   # electron-builder публикует релиз через GITHUB_TOKEN
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Python sidecar (PyInstaller)
+        run: |
+          py -m pip install --upgrade pip
+          py -m pip install -r sidecar/requirements.txt pyinstaller
+          py -m PyInstaller --noconfirm --clean build-sidecar.spec
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build & publish installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # без code-sign (winCodeSign-симлинки ломают сборку)
+        run: |
+          npm ci
+          npm run publish

@@ -12,28 +12,35 @@ BGE-эмбеддер/реранкер + RouteAI) на **server-1** (201.51.5.24)
 ```
 server/                 FastMCP-сервер (шлюз к моделям + RAG + квоты + cost-лог)
   auth.py               Keycloak JWT/JWKS
-  db.py                 Postgres cost_journal + квоты (5M/сессия, 5/нед, 25M/нед)
-  clients.py            RouteAI (LLM+embed), Qdrant, reranker, self-hosted vLLM
-  pricing.py            тарифы для cost-журнала
+  db.py                 Postgres cost_journal + недельная квота (25M/студента/неделю)
+  clients.py            RouteAI (LLM+embed), Qdrant, reranker, self-host vLLM; chat + chat_stream (SSE)
+  pricing.py            тарифы cost-журнала (self-host local/* = 0 ₽)
   tools/                инструменты MCP: chat, my_usage, rag_index, rag_search, cost_report
-skills/                 37 навыков для агентов (семьи Аналитика/Финансы/Архитектура/Менеджмент + инж)
+portal/                 SPA личного кабинета/курса (index.html; :ro-маунт, отдаёт Caddy)
+portal_api/             FastAPI портала: лекции/ДЗ/оценки/хранилище + POST /api/chat/stream (SSE)
+  store.py              программа курсов: треки engineer (v0.6) и managers
+cli/                    курсовой CLI `ape` (v1.18) — чистый stdlib, вход через GitHub
+desktop/                APE Desktop — оболочка (Electron + Python sidecar), модульная
+skills/                 44 навыка для агентов (семьи Аналитика/Финансы/Архитектура/Менеджмент + инж)
+slides/                 генераторы деков лекций в дизайн-системе (slides_ds.py + build_*.py)
 examples/               показательный пример для лекции (агент кофейни)
-docs/                   architecture, cost-analysis, alternatives, DEPLOY + пакет ABOP (см. ниже)
-docker-compose.yml      MCP + Postgres + Caddy (TLS)
+docs/                   architecture, DEPLOY (runbook), курсы, лекции + пакет ABOP (см. ниже)
+docker-compose.yml      MCP + portal-api + Postgres + Keycloak + Caddy + MinIO
 ```
 
 ## Ключевые решения (детали в docs/)
 
-- **Аутентификация:** студент → Keycloak (OIDC, GitHub login) → JWT → FastMCP (проверка
-  по JWKS). Ключа провайдера у студента нет — всё через шлюз.
-- **Маршрутизация моделей:** кодинг → **Qwen3.8-27B** (self-host на RTX 6000), исследования
-  → **только DeepSeek**, разнообразие/fallback → RouteAI-каскад. Claude — **только лектор**.
-- **Квоты:** 5M токенов/сессия × 5 сессий/неделю = 25M/студента/неделю. Cost с первой
-  недели — каждый вызов в Postgres.
-- **RAG:** BGE-M3 embed → Qdrant (свои коллекции `ape_*`) → BGE-rerank. Переиспользуем
-  живой стек sLAVA.
-- **Экономика:** ~$4–5k за весь семестр (30 студентов) вместо десятков тысяч на
-  Claude-для-всех. См. `docs/cost-analysis.md`.
+- **Аутентификация:** студент → Keycloak (OIDC, GitHub login) → JWT → FastMCP/portal-api
+  (проверка по JWKS). Ключа провайдера у студента нет — всё через шлюз.
+- **Маршрутизация моделей (актуально):** **все профили** (`standard`/`code`/`research`) →
+  **self-host Qwen3-30B-A3B** (`local/qwen3-30b-a3b`, vLLM FP8 на арендованной Ada-карте),
+  **DeepSeek — fallback** в каскаде. Claude — только лектор. Задаётся в `.env` cascades.
+- **Стриминг:** `POST /api/chat/stream` (portal-api, SSE) → `clients.chat_stream` → vLLM;
+  квота проверяется до, cost логируется после (по usage из финального чанка). Для десктоп-оболочки.
+- **Квоты:** единственный лимит — **25M токенов/студента/неделю** (сброс в понедельник).
+  Cost с первой недели — каждый вызов в Postgres (`cost_journal`); self-host = 0 ₽ per-token.
+- **RAG:** BGE-M3 embed → Qdrant (`ape_*`) → BGE-rerank. Переиспользуем стек sLAVA.
+- **Экономика:** ~$4–5k за семестр (30 студентов). См. `docs/cost-analysis.md`.
 
 ## Быстрый старт (локально)
 
@@ -43,12 +50,20 @@ pip install -e .
 ape-mcp                    # поднимет MCP на 127.0.0.1:8787
 ```
 
-Деплой на server-1 — `docs/DEPLOY.md`. Пример для лекции — `examples/coffee-reviews-agent/`.
+Деплой/восстановление на server-1 — **`docs/DEPLOY.md`** (runbook: контейнеры, per-service
+scp+rebuild, SSH-нюансы, жизненный цикл Qwen-инстанса на Vast). Пример — `examples/coffee-reviews-agent/`.
 
-## Клиент
+## Клиенты
 
-Студенты работают через **OpenCode CLI** (OSS, OpenAI-совместимый), подключённый к
-курсовому MCP по JWT. Скиллы из `skills/` кладутся в клиент как стартовый набор.
+- **`ape`** (осн. путь) — курсовой CLI, `pip install -U "git+https://github.com/mkhlsokolenko-ai/ai-product-engineer#subdirectory=cli"`, вход `ape login` (GitHub). Артефакты → `docs/` проекта. Гайд: `docs/APE_GUIDE.md`.
+- **APE Desktop** — устанавливаемое приложение (Electron + Python sidecar), модульное (чат/кабинет; roadmap: OCR/NLP/рабочие источники/ABOP). Сборка/доставка: `desktop/README.md`, приоритеты: `desktop/docs-competitive-moscow.md`.
+- Портал — `engineer-ai.pro` (кабинет, курс, оценки, хранилище).
+
+## Курсы (портал, трек в `portal_api/store.py`)
+
+- **engineer** (v0.6, 15 недель) — инженерный: discovery → design → build → evals/экономика → защита.
+- **managers** — обзорный для менеджеров (8 модулей): промпт, скиллы, свой скилл, данные, проверка, мультиагенты. Программа `docs/course-managers-overview.md`, деки `docs/managers/`.
+- Деки лекций — `docs/lecture-*/`, генераторы — `slides/`.
 
 ## ABOP — среда разработки агентов (продуктизация ядра)
 
@@ -94,8 +109,10 @@ ape-mcp                    # поднимет MCP на 127.0.0.1:8787
 
 ---
 
-## Статус
+## Статус (актуально)
 
-Каркас v0.1: рабочий MCP-сервер, 37 навыков, пример для лекции, cost-анализ и деплой-гайд.
-Перед потоком: развернуть Keycloak-realm, вписать боевые эндпоинты/ключи в `.env`,
-поднять vLLM с Qwen3.8-27B на арендованной RTX 6000, актуализировать тарифы.
+Развёрнуто на server-1 (`/home/slava/ai-product-engineer`, compose-проект `ai-product-engineer`):
+MCP + portal-api + Postgres + Keycloak + Caddy + MinIO. Self-host **Qwen3-30B-A3B FP8** на Vast
+(эндпоинт в `.env → LOCAL_LLM_BASE_URL`, инстанс пересоздаётся — см. `docs/DEPLOY.md`). Стриминг,
+44 навыка, два курса (engineer/managers), CLI `ape` v1.18, APE Desktop v0.1 (инсталлятор + авто-апдейт).
+Полный порядок восстановления/деплоя/настройки — **`docs/DEPLOY.md`**.

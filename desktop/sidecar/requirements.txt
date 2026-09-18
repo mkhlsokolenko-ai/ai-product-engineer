@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+# auth.py / gateway.py / db.py — только stdlib (urllib, http.server, sqlite3), доп. пакеты не нужны.

@@ -27,6 +27,8 @@ PRICING: dict[str, tuple[float, float]] = {
     # RTX 6000 @ $0.60/ч ≈ 54₽/ч. Ставим номинал ~0, реальную стоимость GPU
     # считаем отдельно в docs/cost-analysis.md (fixed cost, не per-token).
     "local/qwen3.8-27b": (0.0, 0.0),
+    # Self-host агентная 30B-A3B (оба профиля code+ask маршрутизируются сюда).
+    "local/qwen3-30b-a3b": (0.0, 0.0),
 }
 
 

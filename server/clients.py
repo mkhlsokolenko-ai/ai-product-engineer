@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from .config import settings
@@ -88,6 +90,75 @@ async def chat(
             continue
 
     raise RuntimeError(f"Все модели каскада {cascade} недоступны: {last_err}")
+
+
+async def chat_stream(
+    messages: list[dict],
+    *,
+    profile: str = "standard",
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 4096,
+):
+    """Стриминговый chat: async-генератор событий по каскаду.
+
+    Отдаёт словари: {"delta": str, "model": m} на токены, затем {"done": True, "model",
+    "input_tokens", "output_tokens", "finish_reason"}. Пре-первый-токен ошибка → фолбек на
+    следующую модель; ошибка после начала стрима → {"error": ...} и стоп.
+    """
+    cascade = [model] if model else settings.cascade_for(profile)
+    last_err: Exception | None = None
+    for m in cascade:
+        base_url, api_key, real_model = _route(m)
+        if not base_url:
+            continue
+        payload: dict = {
+            "model": real_model, "messages": messages, "temperature": temperature,
+            "max_tokens": max_tokens, "stream": True, "stream_options": {"include_usage": True},
+        }
+        if base_url == settings.local_llm_base_url and settings.local_llm_base_url:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        started = False
+        in_tok = out_tok = 0
+        finish = ""
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=20.0)) as cli:
+                async with cli.stream(
+                    "POST", f"{base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"}, json=payload,
+                ) as r:
+                    r.raise_for_status()
+                    async for line in r.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except Exception:  # noqa: BLE001
+                            continue
+                        ch = chunk.get("choices") or []
+                        if ch:
+                            delta = (ch[0].get("delta") or {}).get("content") or ""
+                            if delta:
+                                started = True
+                                yield {"delta": delta, "model": m}
+                            if ch[0].get("finish_reason"):
+                                finish = ch[0]["finish_reason"]
+                        if chunk.get("usage"):
+                            in_tok = chunk["usage"].get("prompt_tokens", 0) or 0
+                            out_tok = chunk["usage"].get("completion_tokens", 0) or 0
+            yield {"done": True, "model": m, "input_tokens": in_tok,
+                   "output_tokens": out_tok, "finish_reason": finish}
+            return
+        except Exception as e:  # noqa: BLE001 — каскад: до первого токена фолбечим
+            last_err = e
+            if started:
+                yield {"error": f"{m}: {e}", "model": m}
+                return
+            continue
+    yield {"error": f"Все модели каскада {cascade} недоступны: {last_err}"}
 
 
 # ─────────────────────────── Embeddings ───────────────────────────

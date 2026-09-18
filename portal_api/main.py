@@ -16,14 +16,15 @@ from datetime import date, datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from jwt import PyJWKClient
 from minio import Minio
 from pydantic import BaseModel
 
 from portal_api import store
-from server import db
+from server import clients, db
 from server.config import settings
+from server.pricing import cost_rub
 
 
 class SubmissionIn(BaseModel):
@@ -157,6 +158,68 @@ async def my_usage(session_id: str = "", claims: dict = Depends(verify)) -> dict
     return await db.student_report(claims["sub"], session_id or None)
 
 
+class ChatStreamIn(BaseModel):
+    prompt: str
+    session_id: str = "desktop"
+    profile: str = "standard"
+    system: str = ""
+    prompt_version: str = ""
+    max_tokens: int = 1500
+
+
+def _sse(d: dict) -> str:
+    return "data: " + json.dumps(d, ensure_ascii=False) + "\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_ep(body: ChatStreamIn, claims: dict = Depends(verify)) -> StreamingResponse:
+    """Стриминг ответа модели по SSE (для десктоп-оболочки). Квота — до, cost — после (по usage).
+
+    Все профили маршрутизируются в self-host 30B (см. .env cascades), DeepSeek — fallback.
+    """
+    student_id = claims["sub"]
+    username = claims.get("preferred_username", "") or ""
+
+    async def gen():
+        try:
+            await db.check_quota(student_id, body.session_id)
+        except db.QuotaExceeded as e:
+            yield _sse({"error": "quota_exceeded", "message": str(e)})
+            return
+        messages = ([{"role": "system", "content": body.system}] if body.system else []) + [
+            {"role": "user", "content": body.prompt}
+        ]
+        model, itok, otok = "", 0, 0
+        try:
+            async for ev in clients.chat_stream(messages, profile=body.profile, max_tokens=body.max_tokens):
+                if ev.get("delta"):
+                    model = ev.get("model") or model
+                    yield _sse({"delta": ev["delta"]})
+                elif ev.get("done"):
+                    model = ev.get("model") or model
+                    itok, otok = ev.get("input_tokens", 0), ev.get("output_tokens", 0)
+                elif ev.get("error"):
+                    yield _sse({"error": ev["error"]})
+        except Exception as e:  # noqa: BLE001 — не рвём соединение молча
+            yield _sse({"error": str(e)})
+        if model:
+            cost = cost_rub(model, itok, otok)
+            try:
+                await db.log_usage(
+                    student_id=student_id, username=username, session_id=body.session_id,
+                    kind="llm", model=model, profile=body.profile,
+                    input_tokens=itok, output_tokens=otok, cost_rub=cost,
+                    prompt_version=body.prompt_version or None,
+                )
+            except Exception:  # noqa: BLE001 — лог не должен рвать ответ
+                pass
+            yield _sse({"done": True, "model": model, "cost_rub": cost,
+                        "input_tokens": itok, "output_tokens": otok})
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.get("/api/leaderboard")
 async def leaderboard(claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as conn:  # noqa: SLF001 — переиспользуем пул MCP
@@ -287,17 +350,17 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 # ─────────────────────────── Лекции / Домашки / Оценки ───────────────────────────
 
 @app.get("/api/lectures")
-async def lectures(claims: dict = Depends(verify)) -> list[dict]:
+async def lectures(track: str = "engineer", claims: dict = Depends(verify)) -> list[dict]:
     _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
             "SELECT week,block,title,topic,materials_url,outcomes,skills,practice,scheduled_at,status,code,seq "
-            "FROM lectures ORDER BY week,seq,position"
+            "FROM lectures WHERE track=%s ORDER BY week,seq,position", (track,)
         )
         rows = await cur.fetchall()
         mrows = await (await c.execute(
             "SELECT id,lecture_week,title,url FROM lecture_materials ORDER BY id")).fetchall()
-        arows = await (await c.execute("SELECT week FROM assignments")).fetchall()
+        arows = await (await c.execute("SELECT week FROM assignments WHERE track=%s", (track,))).fetchall()
     mats: dict[int, list] = {}
     for mid, wk, title, url in mrows:
         mats.setdefault(wk, []).append({"id": mid, "title": title, "url": url})
@@ -307,7 +370,8 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
     for r in rows:
         last_seq[r[0]] = max(last_seq.get(r[0], 0), r[11] or 1)
     today = date.today()
-    from portal_api.store import BLOCK_NAMES
+    from portal_api.store import BLOCK_NAMES, MANAGERS_BLOCK_NAMES
+    block_names = MANAGERS_BLOCK_NAMES if track == "managers" else BLOCK_NAMES
     out = []
     for r in rows:
         week, seq = r[0], r[11] or 1
@@ -315,9 +379,11 @@ async def lectures(claims: dict = Depends(verify)) -> list[dict]:
         is_last = seq == last_seq.get(week, 1)
         item = {
             "code": r[10], "week": week, "seq": seq,
-            "block": r[1], "block_name": BLOCK_NAMES.get(r[1], ""),
+            "block": r[1], "block_name": block_names.get(r[1], ""),
             "title": r[2], "topic": r[3], "materials_url": r[4],
-            "materials": mats.get(week, []) if is_last else [],
+            # материалы привязаны к неделе без трека → показываем только для engineer,
+            # чтобы недели 1–8 менеджерского трека не подхватили чужие материалы.
+            "materials": mats.get(week, []) if (is_last and track == "engineer") else [],
             "outcomes": [x for x in (r[5] or "").split("|") if x],
             "skills": [x for x in (r[6] or "").split(",") if x],
             "practice": r[7] or "",
@@ -422,10 +488,11 @@ async def lecture_delete(code: str, claims: dict = Depends(require_staff)) -> di
 
 
 @app.get("/api/assignments")
-async def assignments(claims: dict = Depends(verify)) -> list[dict]:
+async def assignments(track: str = "engineer", claims: dict = Depends(verify)) -> list[dict]:
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
-            "SELECT id,week,title,description,fmt,max_score FROM assignments ORDER BY position,week"
+            "SELECT id,week,title,description,fmt,max_score FROM assignments WHERE track=%s "
+            "ORDER BY position,week", (track,)
         )
         rows = await cur.fetchall()
     return [

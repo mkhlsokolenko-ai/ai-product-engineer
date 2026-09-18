@@ -238,6 +238,8 @@ const NAV=[
 ];
 const STAFF=["Лектор",[["admin","Командный центр","admin"]]];
 let CUR="home", CHROME={hwDue:0,tokensWeek:0,quotaPct:0,adminBadge:0};
+let _track="engineer";
+function setTrack(t){_track=t;vLectures();}
 
 function boot(tok){
   TOKEN=tok;CLAIMS=jwtp(tok);ROLES=(CLAIMS.realm_access&&CLAIMS.realm_access.roles)||[];
@@ -349,7 +351,7 @@ const SKILLS={
  "test-writer":["Тесты ДО реализации (TDD)","Спека → тесты → код: агент пишет под проверяемую цель, а не «как понял»"],
  "memory-architect":["Двухуровневая память","Спроектировать память агента с дистилляцией — контекст не раздувается"],
  "rag-architect":["Проектирование RAG-pipeline","Chunk/embed/rerank под домен + оценка качества retrieval"],
- "eval-generator":["Eval-датасет + грейдеры","Мерить качество (code/LLM-judge/human), а не «на глаз» — ключевой навык FDE"],
+ "eval-generator":["Eval-датасет + грейдеры","Мерить качество (code/LLM-judge/human), судья на self-host Qwen (≈0 ₽) — гоняй на каждом коммите"],
  "unit-economics-checker":["Проверка unit-экономики","Найти дыры в экономике на пользователя до того, как масштабируешь убыток"],
  "grill-me":["Безжалостный допрос","Прожарка плана/защиты по дереву решений — репетиция перед комиссией"],
  "conventional-commits":["Дисциплина коммитов","Читаемая история изменений — стандарт, который агент соблюдает сам"],
@@ -374,8 +376,10 @@ const SKILLS={
 };
 let _lecOpen=null,_lecMap={};
 async function vLectures(){
-  view(`<h2>Курс</h2><div id="lc">${skView(4)}</div>`);
-  const [ls,as,d]=await Promise.all([api("/api/lectures").catch(()=>[]),api("/api/assignments").catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
+  const seg=(t,lab)=>`<button onclick="setTrack('${t}')" style="border:1px solid var(--b1);background:${_track===t?'var(--accent-bg)':'transparent'};color:${_track===t?'var(--accent)':'var(--ink2)'};font-weight:600;font-size:12.5px;padding:6px 12px;border-radius:8px;cursor:pointer">${lab}</button>`;
+  view(`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px"><h2 style="margin:0;flex:1">Курс</h2><div style="display:flex;gap:6px">${seg('engineer','Инженерный')}${seg('managers','Для менеджеров')}</div></div><div id="lc">${skView(4)}</div>`);
+  const qs="?track="+encodeURIComponent(_track);
+  const [ls,as,d]=await Promise.all([api("/api/lectures"+qs).catch(()=>[]),api("/api/assignments"+qs).catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
   const staff=ROLES.includes("lecturer")||ROLES.includes("admin");
   const cw=d.week||0, done=ls.filter(x=>x.status==='passed').length, pct=ls.length?Math.round(100*done/ls.length):0;
   const asW={};as.forEach(a=>{asW[a.week]=a;});
@@ -504,7 +508,7 @@ async function vProject(){
      <div class="tile"><div class="l">Файлы</div><div class="v">${files.length}</div><div class="m">${mb(s.used_bytes||0)} МБ из 600</div></div>
      <div class="tile"><div class="l">RAG-коллекция</div><div class="v" style="font-size:13px;color:var(--accent);word-break:break-all">${ragCollection()}</div><div class="m">rag_index / rag_search</div></div>
      <div class="tile"><div class="l">Cost · неделя</div><div class="v">${(wk.cost_rub||0).toFixed(0)}<span style="font-size:13px"> ₽</span></div><div class="m">${fmtN(wk.tokens_used)} токенов</div></div>
-     <div class="tile"><div class="l">Наблюдаемость</div><div class="v" style="font-size:16px">Langfuse</div><div class="m">трейсы · скоро</div></div></div>
+     <div class="tile"><div class="l">Наблюдаемость</div><div class="v" style="font-size:16px">Трейс-журнал</div><div class="m">траектория · cost-per-task</div></div></div>
    <div class="card" style="margin-bottom:0"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px"><div class="t18">Файлы проекта</div><div class="faint mono">${mb(s.used_bytes||0)} / 600 МБ</div></div>
      <div class="dz" id="pjDz" role="button" tabindex="0">${ic('up',22,1.8,'var(--accent)')}<div style="font-size:13.5px;font-weight:500;margin-top:6px">Перетащите файлы или нажмите, чтобы выбрать</div><div class="faint" style="margin-top:2px">PDF, MD, IPYNB, ZIP · до 50 МБ на файл</div><input type="file" id="pjIn" multiple style="display:none"></div>
      <div id="pjMsg" class="faint" style="margin-bottom:8px"></div>

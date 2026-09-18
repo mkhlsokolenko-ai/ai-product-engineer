@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-APE_VERSION = "1.17.0"
+APE_VERSION = "1.18.0"
 KC = "https://auth.engineer-ai.pro/realms/ai-product-engineer/protocol/openid-connect"
 MCP = "https://mcp.engineer-ai.pro/mcp"
 PORTAL = "https://engineer-ai.pro"
@@ -1028,6 +1028,37 @@ def _payload_for(name: str) -> str:
     return LAST_ANSWER
 
 
+# ape запускают ИЗ папки проекта → находки/артефакты по умолчанию складываем в <корень>/docs.
+# Корень = ближайший предок с маркером проекта, иначе — текущая папка.
+# Переопределить папку артефактов: env APE_DOCS_DIR (абсолютный путь).
+_PROJECT_MARKERS = (".git", ".ape-project", "pyproject.toml", "package.json", "go.mod", "Cargo.toml")
+
+
+def _project_root() -> str:
+    cur = os.getcwd()
+    while True:
+        if any(os.path.exists(os.path.join(cur, m)) for m in _PROJECT_MARKERS):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return os.getcwd()     # маркер не найден — корень = текущая папка
+        cur = parent
+
+
+def _docs_dir() -> str:
+    return os.environ.get("APE_DOCS_DIR") or os.path.join(_project_root(), "docs")
+
+
+def _artifact_path(name: str) -> str:
+    """Куда писать артефакт: голое имя → <проект>/docs; путь/абсолют — как указал пользователь."""
+    n = os.path.expanduser(name)
+    if os.path.isabs(n) or os.path.dirname(n):
+        return n                   # явный путь — уважаем, не трогаем
+    d = _docs_dir()
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, n)
+
+
 def _save_local(path: str, content: str) -> str:
     path = os.path.expanduser(path)
     d = os.path.dirname(path)
@@ -1067,12 +1098,16 @@ def do_save(rest: str) -> None:
             print(col(f"  ☁ загружено в проект: {name} — открой портал → «Мой проект»", "cy"))
         except Exception as e:  # noqa: BLE001
             print(col(f"  Не удалось загрузить в облако: {e}", "yellow"))
-    else:                                             # /save [путь/имя]
-        name = rest.strip() or _default_name()
-        content = _payload_for(name)
+    else:                                             # /save [путь/имя] → по умолчанию в <проект>/docs
+        target = _artifact_path(rest.strip() or _default_name())
+        content = _payload_for(target)
         try:
-            p = _save_local(name, content)
-            print(col(f"  💾 сохранено: {p} ({len(content)} символов)", "cy"))
+            p = _save_local(target, content)
+            try:
+                shown = os.path.relpath(p, _project_root())
+            except ValueError:                        # другой диск на Windows
+                shown = p
+            print(col(f"  💾 сохранено: {shown} ({len(content)} символов)", "cy"))
         except Exception as e:  # noqa: BLE001
             print(col(f"  Не удалось сохранить: {e}", "yellow"))
 
@@ -1318,9 +1353,15 @@ def _banner() -> None:
     who = _claims().get("preferred_username")
     print()
     if who:
-        print(f"   {dim}вошёл как {cy2}{who}{dim} · память диалога включена · /help — команды{o}\n")
+        print(f"   {dim}вошёл как {cy2}{who}{dim} · память диалога включена · /help — команды{o}")
     else:
-        print(f"   {C['yellow']}не вошёл — набери /login{o}\n")
+        print(f"   {C['yellow']}не вошёл — набери /login{o}")
+    root = _project_root()
+    try:
+        docs_rel = os.path.relpath(_docs_dir(), root)
+    except ValueError:
+        docs_rel = _docs_dir()
+    print(f"   {dim}проект: {cy2}{os.path.basename(root) or root}{dim} · артефакты /save → {cy2}{docs_rel}/{o}\n")
 
 
 _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['off']}
@@ -1334,7 +1375,7 @@ _HELP = f"""  {C['bold']}Команды{C['off']} {C['dim']}(через /){C['of
     {C['cy']}/rag{C['off']} search <q>  поиск по своей RAG-коллекции
     {C['cy']}/rag{C['off']} index <ф.>  проиндексировать файлы
     {C['cy']}/more{C['off']}            раскрыть последний ответ полностью
-    {C['cy']}/save{C['off']} <файл>     сохранить на компьютер (.md/.py/… — код запишется без обвязки)
+    {C['cy']}/save{C['off']} <файл>     сохранить в {C['cy']}docs/{C['off']} проекта (.md/.py/… — код без обвязки); путь/абсолют — как указал
     {C['cy']}/save cloud{C['off']} <имя> загрузить в свой проект (портал → «Мой проект»)
     {C['cy']}/memory{C['off']}          показать конспект памяти · {C['cy']}/distill{C['off']} — сжать сейчас
     {C['cy']}/forget{C['off']}          очистить память этой сессии

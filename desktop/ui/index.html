@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:*; img-src 'self' data:;" />
+  <title>APE Desktop</title>
+  <link rel="stylesheet" href="core/theme.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="rail"><div class="logo">ape</div><div id="railNav"></div><div class="spacer"></div></div>
+    <div id="main">
+      <div id="topbar"><div class="title" id="topTitle">APE Desktop</div><div id="authBox"></div></div>
+      <div id="panel"></div>
+    </div>
+  </div>
+  <script type="module" src="core/app.js"></script>
+</body>
+</html>
