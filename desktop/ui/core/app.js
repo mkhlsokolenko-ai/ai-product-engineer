@@ -56,6 +56,40 @@ function renderNav() {
   });
 }
 
+// Быстрые функции в рейле (настраиваемые, persist localStorage) — из макета.
+const QF_DEFAULT = ["new", "palette", "theme"];
+function quickActions() {
+  const a = [
+    { id: "new", label: "Новый чат", icon: "➕", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } },
+    { id: "palette", label: "Команды", icon: "⌘", run: openPalette },
+    { id: "theme", label: "Тема", icon: "🌓", run: toggleTheme },
+  ];
+  MODULES.forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
+  return a;
+}
+function getPins() { try { return JSON.parse(localStorage.getItem("ape_quickfns")) || QF_DEFAULT; } catch { return QF_DEFAULT; } }
+function renderQuick() {
+  const el = document.getElementById("railQuick"); if (!el) return;
+  const acts = quickActions(), pins = getPins();
+  el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? `<button class="railbtn qf" data-id="${a.id}" title="${a.label}"><div style="font-size:18px">${a.icon}</div></button>` : ""; }).join("")
+    + `<button class="railbtn" id="qfAdd" title="Настроить быстрые функции"><div style="font-size:16px">＋</div></button>`;
+  el.querySelectorAll(".qf").forEach((b) => b.onclick = () => { const a = acts.find((x) => x.id === b.dataset.id); if (a) a.run(); });
+  document.getElementById("qfAdd").onclick = openQuickManage;
+}
+function openQuickManage() {
+  const acts = quickActions(), pins = getPins();
+  const ov = document.createElement("div");
+  ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px)";
+  ov.innerHTML = `<div style="width:min(420px,92vw);background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--b1);border-radius:14px;padding:18px">
+    <div style="font-weight:600;margin-bottom:12px">Быстрые функции в меню</div>
+    ${acts.map((a) => `<label style="display:flex;gap:8px;align-items:center;padding:6px 0;font-size:13px"><input type="checkbox" class="qfc" value="${a.id}" ${pins.includes(a.id) ? "checked" : ""}/> ${a.icon} ${a.label}</label>`).join("")}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" id="qfCancel">Закрыть</button><button class="btn primary" id="qfSave">Сохранить</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector("#qfCancel").onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.querySelector("#qfSave").onclick = () => { localStorage.setItem("ape_quickfns", JSON.stringify([...ov.querySelectorAll(".qfc:checked")].map((x) => x.value))); ov.remove(); renderQuick(); };
+}
+
 async function loadModule(id) {
   active = id;
   renderNav();
@@ -152,6 +186,7 @@ async function boot() {
   await renderAuth();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }
   renderNav();
+  renderQuick();
   if (MODULES.length) loadModule(MODULES[0].id);
   else $("panel").innerHTML = `<div class="faint" style="padding:24px">Модули не найдены. Проверь сайдкар.</div>`;
   // командная палитра: Ctrl+K + кнопка в топбаре
