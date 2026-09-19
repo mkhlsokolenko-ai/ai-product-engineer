@@ -97,13 +97,52 @@ function applyTheme(t) {
   const b = document.getElementById("themeBtn");
   if (b) b.textContent = t === "light" ? "☀️" : "🌙";
 }
+function toggleTheme() {
+  const t = (localStorage.getItem("ape_theme") || "dark") === "dark" ? "light" : "dark";
+  localStorage.setItem("ape_theme", t); applyTheme(t);
+}
 function initTheme() {
   applyTheme(localStorage.getItem("ape_theme") || "dark");
   const b = document.getElementById("themeBtn");
-  if (b) b.onclick = () => {
-    const t = (localStorage.getItem("ape_theme") || "dark") === "dark" ? "light" : "dark";
-    localStorage.setItem("ape_theme", t); applyTheme(t);
+  if (b) b.onclick = toggleTheme;
+}
+
+// Командная палитра (Ctrl+K) — из макета «Поиск и команды».
+function buildCommands() {
+  const cmds = MODULES.map((m) => ({ label: "Открыть: " + m.title, run: () => loadModule(m.id) }));
+  cmds.push({ label: "Новый чат", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } });
+  cmds.push({ label: "Тема: светлая / тёмная", run: toggleTheme });
+  if (window.ape && window.ape.updater) cmds.push({ label: "Проверить обновления", run: () => window.ape.updater.check() });
+  return cmds;
+}
+function openPalette() {
+  if (document.getElementById("cmdPalette")) return;
+  const all = buildCommands();
+  const ov = document.createElement("div");
+  ov.id = "cmdPalette";
+  ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:100;backdrop-filter:blur(2px)";
+  ov.innerHTML = `<div style="width:min(560px,92vw);background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--b1);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden">
+    <input id="cmdInp" placeholder="Команда…" autocomplete="off" style="width:100%;border:0;border-bottom:1px solid var(--b1);border-radius:0;padding:14px 16px;font-size:14px;background:transparent"/>
+    <div id="cmdList" style="max-height:52vh;overflow:auto;padding:6px"></div></div>`;
+  document.body.appendChild(ov);
+  let items = all, sel = 0;
+  const list = ov.querySelector("#cmdList");
+  const close = () => ov.remove();
+  const runSel = () => { const c = items[sel]; close(); if (c) c.run(); };
+  const paint = () => {
+    list.innerHTML = items.map((c, i) => `<div class="cmd" data-i="${i}" style="padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;background:${i === sel ? "var(--accent-bg)" : "transparent"};color:${i === sel ? "var(--accent-2)" : "var(--ink1)"}">${c.label}</div>`).join("") || `<div class="faint" style="padding:10px">Ничего не найдено</div>`;
+    list.querySelectorAll(".cmd").forEach((e) => { e.onmouseenter = () => { sel = +e.dataset.i; paint(); }; e.onclick = runSel; });
   };
+  const inp = ov.querySelector("#cmdInp");
+  inp.oninput = () => { const q = inp.value.toLowerCase(); items = all.filter((c) => c.label.toLowerCase().includes(q)); sel = 0; paint(); };
+  ov.onkeydown = (e) => {
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowDown") { sel = Math.min(sel + 1, items.length - 1); paint(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); paint(); e.preventDefault(); }
+    else if (e.key === "Enter") runSel();
+  };
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  paint(); inp.focus();
 }
 
 async function boot() {
@@ -115,6 +154,12 @@ async function boot() {
   renderNav();
   if (MODULES.length) loadModule(MODULES[0].id);
   else $("panel").innerHTML = `<div class="faint" style="padding:24px">Модули не найдены. Проверь сайдкар.</div>`;
+  // командная палитра: Ctrl+K + кнопка в топбаре
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); openPalette(); }
+  });
+  const pb = document.getElementById("cmdBtn");
+  if (pb) pb.onclick = openPalette;
 }
 
 boot();
