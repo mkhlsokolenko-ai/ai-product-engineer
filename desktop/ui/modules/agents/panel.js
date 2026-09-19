@@ -1,192 +1,186 @@
-// Модуль «Агенты» (фронт): каталог + конструктор (скилл/шаги/DoD/анти) + запуск цепочек.
+// Модуль «Агенты» — вёрстка 1:1 из макета: каталог + полноэкранный «Конструктор агента»
+// (имя/скиллы/шаги ↑↓✕/цепочка ролей/DoD/анти + sticky-превью). Логика — сайдкар CRUD/run.
 const A = "/api/modules/agents";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-
-function modal(title, bodyHTML, onOk, okLabel) {
-  const ov = document.createElement("div");
-  ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50";
-  ov.innerHTML = `<div class="ape-card" style="width:min(620px,94vw);max-height:88vh;overflow:auto;padding:20px;gap:0">
-    <div style="font-weight:600;font-size:15px;margin-bottom:14px">${esc(title)}</div>
-    <div id="mBody">${bodyHTML}</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
-      <button class="btn" id="mCancel">Закрыть</button>${onOk ? `<button class="btn primary" id="mOk">${esc(okLabel || "Готово")}</button>` : ""}</div></div>`;
-  document.body.appendChild(ov);
-  const close = () => ov.remove();
-  ov.querySelector("#mCancel").onclick = close;
-  if (onOk) ov.querySelector("#mOk").onclick = () => { if (onOk(ov.querySelector("#mBody")) !== false) close(); };
-  ov.onclick = (e) => { if (e.target === ov) close(); };
-  return ov;
-}
+const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
+const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px";
+const FIELD = "padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px;line-height:1.55";
 
 export async function mount(root, ctx) {
-  const { api } = ctx;
-  let agents = [], skills = [], chain = new Set();
+  const { api, mascot } = ctx;
+  let agents = [], skills = [], roles = [], chainSel = new Set();
   try { skills = await api(A + "/skills"); } catch {}
+  try { roles = await api(A + "/agent-roles"); } catch {}
 
-  root.innerHTML = `<div style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column">
-    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--b1)">
-      <h2 style="margin:0;flex:1;font-size:17px">Каталог агентов</h2>
-      <button class="btn" id="runChain" disabled>▶ Запустить цепочку</button>
-      <button class="btn primary" id="newAgent">＋ Создать агента</button>
-    </div>
-    <div id="grid" style="flex:1;overflow:auto;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
-  </div>`;
-  const $ = (id) => root.querySelector("#" + id);
+  async function load() { agents = await api(A + "/catalog"); renderCatalog(); }
 
-  function skillOptions(sel) {
-    return skills.map((s) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:2px 8px 2px 0;font-size:12.5px">
-      <input type="checkbox" class="sk" value="${s.id}" ${sel.includes(s.id) ? "checked" : ""}/> ${s.id}</label>`).join("");
+  // ── КАТАЛОГ ──
+  function renderCatalog() {
+    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
+      <div style="max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:20px;animation:ape-in .35s ease-out">
+        <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+          <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
+            <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Каталог агентов</h1>
+            <p style="margin:0;font-size:13px;color:var(--ink-2)">Готовые агенты и цепочки. Соберите своего или запустите готового в тред.</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button id="runChain" disabled style="padding:10px 16px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel);color:var(--ink);font-size:12.5px;font-weight:600">▶ Запустить цепочку</button>
+            <button id="newAgent" style="padding:10px 18px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">＋ Создать агента</button>
+          </div>
+        </div>
+        <div id="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+      </div></div>`;
+    const $ = (id) => root.querySelector("#" + id);
+    $("grid").innerHTML = agents.map((a) => `
+      <div style="${CARD};padding:16px;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" class="pick" data-id="${a.id}" ${chainSel.has(a.id) ? "checked" : ""} title="в цепочку"/>
+          <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}${a.outward ? ` <span class="chip" style="color:var(--warn-ink)">🛡</span>` : ""}</span>
+          <button class="ed" data-id="${a.id}" title="Редактировать" style="width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-2);font-size:11px;cursor:pointer">✎</button>
+          <button class="del" data-id="${a.id}" title="Удалить" style="width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-2);font-size:11px;cursor:pointer">🗑</button>
+        </div>
+        <div style="font-size:12.5px;color:var(--ink-3);min-height:32px">${esc(a.description)}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${(a.skills || []).map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>
+        <button class="run" data-id="${a.id}" style="margin-top:auto;padding:9px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">▶ Запустить</button>
+      </div>`).join("") || `<div style="color:var(--ink-3)">Пока пусто. «＋ Создать агента».</div>`;
+    $("newAgent").onclick = () => openBuilder(null);
+    $("grid").querySelectorAll(".ed").forEach((e) => e.onclick = () => openBuilder(agents.find((a) => a.id == e.dataset.id)));
+    $("grid").querySelectorAll(".del").forEach((e) => e.onclick = async () => { if (confirm("Удалить агента?")) { await api(A + "/catalog/" + e.dataset.id, { method: "DELETE" }); load(); } });
+    $("grid").querySelectorAll(".run").forEach((e) => e.onclick = () => runAgents([+e.dataset.id]));
+    $("grid").querySelectorAll(".pick").forEach((c) => c.onclick = () => { const id = +c.dataset.id; c.checked ? chainSel.add(id) : chainSel.delete(id); $("runChain").disabled = !chainSel.size; $("runChain").textContent = "▶ Запустить цепочку" + (chainSel.size ? " (" + chainSel.size + ")" : ""); });
+    $("runChain").onclick = () => runAgents([...chainSel]);
   }
 
-  function form(a) {
-    a = a || { name: "", description: "", skills: [], steps: "", dod: "", antipatterns: "", profile: "standard" };
-    return `
-      <label class="faint" style="font-size:12px">Имя</label>
-      <input id="f_name" value="${esc(a.name)}" style="width:100%;margin-bottom:8px" placeholder="напр. Аналитик отзывов"/>
-      <label class="faint" style="font-size:12px">Описание</label>
-      <input id="f_desc" value="${esc(a.description)}" style="width:100%;margin-bottom:8px" placeholder="что делает"/>
-      <label class="faint" style="font-size:12px">Скиллы</label>
-      <div style="margin:4px 0 8px">${skillOptions(a.skills || [])}</div>
-      <label class="faint" style="font-size:12px">Шаги (методика)</label>
-      <div id="f_steps_list" style="display:flex;flex-direction:column;gap:6px;margin:4px 0 6px"></div>
-      <button type="button" class="btn sm" id="f_step_add" style="margin-bottom:8px">＋ шаг</button>
-      <label class="faint" style="font-size:12px">Definition of Done</label>
-      <textarea id="f_dod" rows="2" style="width:100%;margin-bottom:8px" placeholder="как понять, что сделано хорошо">${esc(a.dod)}</textarea>
-      <label class="faint" style="font-size:12px">Анти-паттерны (чего не делать)</label>
-      <textarea id="f_anti" rows="2" style="width:100%;margin-bottom:8px">${esc(a.antipatterns)}</textarea>
-      <label class="faint" style="font-size:12px">Профиль</label>
-      <select id="f_profile" style="width:auto;display:block;margin-top:4px">
-        <option value="standard"${a.profile === "standard" ? " selected" : ""}>standard · 30B</option>
-        <option value="code"${a.profile === "code" ? " selected" : ""}>code</option>
-        <option value="research"${a.profile === "research" ? " selected" : ""}>ask</option>
-      </select>
-      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12.5px">
-        <input type="checkbox" id="f_outward" ${a.outward ? "checked" : ""}/> 🛡 Действует наружу (запуск через подтверждение)</label>`;
-  }
+  // ── КОНСТРУКТОР (полный экран, 1:1 из макета) ──
+  function openBuilder(a) {
+    const m = a || { name: "Новый агент", description: "", skills: [], steps: "", dod: "", antipatterns: "", profile: "standard", outward: 0 };
+    let steps = (m.steps || "").split("\n").map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean); if (!steps.length) steps = [""];
+    let sel = new Set(m.skills || []);
+    let chain = [];
+    let outward = !!m.outward;
 
-  function readForm(b) {
-    const steps = [...b.querySelectorAll(".f_step")].map((i) => i.value.trim()).filter(Boolean);
-    return {
-      name: b.querySelector("#f_name").value.trim(),
-      description: b.querySelector("#f_desc").value.trim(),
-      skills: [...b.querySelectorAll(".sk:checked")].map((x) => x.value),
-      steps: steps.join("\n"),
-      dod: b.querySelector("#f_dod").value.trim(),
-      antipatterns: b.querySelector("#f_anti").value.trim(),
-      profile: b.querySelector("#f_profile").value,
-      outward: b.querySelector("#f_outward").checked ? 1 : 0,
+    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
+      <div style="max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:20px;animation:ape-in .35s ease-out">
+        <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+          <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
+            <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Конструктор агента</h1>
+            <p style="margin:0;font-size:13px;color:var(--ink-2)">Опишите роль, шаги и границы. Цепочка собирается из ролей — как конвейер.</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button id="bBack" style="padding:10px 16px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer">← Каталог</button>
+            <button id="bSave" style="padding:10px 18px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">Сохранить агента</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+          <div style="flex:1 1 520px;min-width:340px;display:flex;flex-direction:column;gap:16px">
+            <div style="${CARD}">
+              <label style="display:flex;flex-direction:column;gap:7px"><span style="${LBL}">имя агента</span>
+                <input id="bName" value="${esc(m.name)}" style="${FIELD};font-size:14px;font-weight:600"/></label>
+              <label style="display:flex;flex-direction:column;gap:7px"><span style="${LBL}">описание</span>
+                <input id="bDesc" value="${esc(m.description)}" style="${FIELD}"/></label>
+              <div style="display:flex;flex-direction:column;gap:8px"><span style="${LBL}">скиллы</span>
+                <div id="bSkills" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
+            </div>
+            <div style="${CARD};gap:12px"><span style="${LBL}">шаги работы</span>
+              <div id="bSteps" style="display:flex;flex-direction:column;gap:10px"></div>
+              <button id="bAddStep" style="align-self:flex-start;padding:8px 13px;border:1px dashed rgba(129,140,248,.5);border-radius:9px;background:rgba(99,102,241,.1);color:var(--accent-ink-2);font-size:12px;font-weight:600;cursor:pointer">＋ шаг</button>
+            </div>
+            <div style="${CARD};gap:12px"><span style="${LBL}">цепочка ролей</span>
+              <div id="bChain" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line)">
+                <span style="font-size:11.5px;color:var(--ink-3);align-self:center">добавить роль:</span>
+                <div id="bPool" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <label style="flex:1 1 250px;display:flex;flex-direction:column;gap:7px"><span style="${LBL}">definition of done</span>
+                <textarea id="bDod" rows="3" style="${FIELD}">${esc(m.dod)}</textarea></label>
+              <label style="flex:1 1 250px;display:flex;flex-direction:column;gap:7px"><span style="${LBL}">анти-паттерны</span>
+                <textarea id="bAnti" rows="3" style="${FIELD}">${esc(m.antipatterns)}</textarea></label>
+            </div>
+            <label style="display:flex;gap:8px;align-items:center;font-size:12.5px"><input type="checkbox" id="bOut" ${outward ? "checked" : ""}/> 🛡 Действует наружу (запуск через подтверждение)</label>
+          </div>
+          <div style="flex:0 1 320px;min-width:280px;position:sticky;top:0;padding:20px;border-radius:16px;background:var(--panel-2);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;align-items:center;gap:10px">${mascot("idle", 30)}<span id="pvName" style="flex:1;font-size:14px;font-weight:700">${esc(m.name)}</span></div>
+            <span id="pvSum" style="font-size:12px;line-height:1.5;color:var(--ink-2)"></span>
+            <div id="pvRows" style="display:flex;flex-direction:column;gap:7px;padding-top:12px;border-top:1px solid var(--line)"></div>
+            <button id="bRun" style="margin-top:auto;padding:11px;border:1px solid rgba(129,140,248,.4);border-radius:11px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12.5px;font-weight:600;cursor:pointer">Запустить в треде</button>
+          </div>
+        </div>
+      </div></div>`;
+    const $ = (id) => root.querySelector("#" + id);
+
+    const paintSkills = () => { $("bSkills").innerHTML = skills.map((s) => { const on = sel.has(s.id); return `<button data-s="${s.id}" style="padding:8px 13px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};border-radius:9999px;background:${on ? "var(--accent-bg)" : "var(--panel)"};color:${on ? "var(--accent-ink)" : "var(--ink-2)"};font-size:12px;font-weight:600;cursor:pointer">${s.id}</button>`; }).join(""); $("bSkills").querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { sel.has(b.dataset.s) ? sel.delete(b.dataset.s) : sel.add(b.dataset.s); paintSkills(); paintPreview(); }); };
+    const paintSteps = () => {
+      $("bSteps").innerHTML = steps.map((v, i) => `<div style="display:flex;align-items:center;gap:9px">
+        <span style="width:24px;height:24px;flex:none;border-radius:8px;background:rgba(99,102,241,.2);color:var(--accent-ink-2);font-family:var(--mono);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${i + 1}</span>
+        <input class="stp" data-i="${i}" value="${esc(v)}" style="${FIELD};flex:1;min-width:0" placeholder="что сделать на шаге"/>
+        <button class="sup" data-i="${i}" title="Выше" style="width:28px;height:28px;flex:none;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-2);font-size:11px;cursor:pointer">↑</button>
+        <button class="sdn" data-i="${i}" title="Ниже" style="width:28px;height:28px;flex:none;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-2);font-size:11px;cursor:pointer">↓</button>
+        <button class="srm" data-i="${i}" title="Удалить" style="width:28px;height:28px;flex:none;border:1px solid rgba(239,68,68,.28);border-radius:8px;background:rgba(239,68,68,.1);color:var(--danger-ink);font-size:11px;cursor:pointer">✕</button></div>`).join("");
+      $("bSteps").querySelectorAll(".stp").forEach((x) => x.oninput = () => { steps[+x.dataset.i] = x.value; paintPreview(); });
+      const sw = (i, j) => { if (j < 0 || j >= steps.length) return; [steps[i], steps[j]] = [steps[j], steps[i]]; paintSteps(); };
+      $("bSteps").querySelectorAll(".sup").forEach((x) => x.onclick = () => sw(+x.dataset.i, +x.dataset.i - 1));
+      $("bSteps").querySelectorAll(".sdn").forEach((x) => x.onclick = () => sw(+x.dataset.i, +x.dataset.i + 1));
+      $("bSteps").querySelectorAll(".srm").forEach((x) => x.onclick = () => { steps.splice(+x.dataset.i, 1); if (!steps.length) steps = [""]; paintSteps(); paintPreview(); });
+    };
+    const paintChain = () => {
+      $("bChain").innerHTML = chain.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:8px">
+        <span style="display:inline-flex;align-items:center;gap:8px;padding:10px 13px;border-radius:12px;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.32)">
+          <span style="font-size:12.5px;font-weight:600;color:var(--accent-ink)">${esc(roleName(r))}</span>
+          <button class="cl" data-i="${i}" title="Раньше" style="width:20px;height:20px;border:none;border-radius:6px;background:var(--hover);color:var(--ink-2);font-size:10px;cursor:pointer">←</button>
+          <button class="cr" data-i="${i}" title="Позже" style="width:20px;height:20px;border:none;border-radius:6px;background:var(--hover);color:var(--ink-2);font-size:10px;cursor:pointer">→</button>
+          <button class="cx" data-i="${i}" title="Убрать" style="width:20px;height:20px;border:none;border-radius:6px;background:rgba(239,68,68,.14);color:var(--danger-ink);font-size:10px;cursor:pointer">✕</button></span>
+        ${i < chain.length - 1 ? `<span style="color:var(--ink-3);font-size:14px">→</span>` : ""}</span>`).join("") || `<span style="font-size:12px;color:var(--ink-3)">Пусто — добавьте роли ниже (иначе агент работает соло).</span>`;
+      const sw = (i, j) => { if (j < 0 || j >= chain.length) return; [chain[i], chain[j]] = [chain[j], chain[i]]; paintChain(); };
+      $("bChain").querySelectorAll(".cl").forEach((x) => x.onclick = () => sw(+x.dataset.i, +x.dataset.i - 1));
+      $("bChain").querySelectorAll(".cr").forEach((x) => x.onclick = () => sw(+x.dataset.i, +x.dataset.i + 1));
+      $("bChain").querySelectorAll(".cx").forEach((x) => x.onclick = () => { chain.splice(+x.dataset.i, 1); paintChain(); });
+      $("bPool").innerHTML = roles.map((r) => `<button data-r="${r.id}" style="padding:7px 12px;border:1px dashed var(--line-2);border-radius:9999px;background:transparent;color:var(--ink-2);font-size:11.5px;cursor:pointer">＋ ${esc(r.name)}</button>`).join("");
+      $("bPool").querySelectorAll("[data-r]").forEach((b) => b.onclick = () => { chain.push(b.dataset.r); paintChain(); });
+    };
+    const roleName = (id) => (roles.find((r) => r.id === id) || {}).name || id;
+    const readData = () => ({ name: $("bName").value.trim(), description: $("bDesc").value.trim(), skills: [...sel], steps: steps.filter(Boolean).join("\n"), dod: $("bDod").value.trim(), antipatterns: $("bAnti").value.trim(), profile: m.profile || "standard", outward: $("bOut").checked ? 1 : 0 });
+    const paintPreview = () => {
+      $("pvName").textContent = $("bName").value || "Агент";
+      const sc = steps.filter(Boolean).length;
+      $("pvSum").textContent = `Агент с ${sel.size} скилл(ами) и ${sc} шаг(ами)` + (chain.length ? `, в цепочке ${chain.length} рол(ей).` : ".");
+      $("pvRows").innerHTML = [["скиллы", [...sel].join(", ") || "—"], ["шагов", sc], ["цепочка", chain.map(roleName).join(" → ") || "соло"], ["наружу", $("bOut").checked ? "да (гейт)" : "нет"]]
+        .map((r) => `<span style="display:flex;gap:10px;font-size:11.5px;line-height:1.45"><span style="width:74px;flex:none;${LBL};font-size:9.5px">${r[0]}</span><span style="flex:1;color:var(--ink-2)">${esc(String(r[1]))}</span></span>`).join("");
+    };
+
+    paintSkills(); paintSteps(); paintChain(); paintPreview();
+    $("bName").oninput = paintPreview; $("bOut").onchange = paintPreview;
+    $("bAddStep").onclick = () => { steps.push(""); paintSteps(); };
+    $("bBack").onclick = () => renderCatalog();
+    $("bSave").onclick = async () => {
+      const d = readData(); if (!d.name) { alert("Укажи имя"); return; }
+      if (a) await api(A + "/catalog/" + a.id, { method: "PATCH", body: JSON.stringify(d) });
+      else await api(A + "/catalog", { method: "POST", body: JSON.stringify(d) });
+      await load();
+    };
+    $("bRun").onclick = async () => {
+      const d = readData();
+      if (a) { await api(A + "/catalog/" + a.id, { method: "PATCH", body: JSON.stringify(d) }); runAgents([a.id]); }
+      else { const r = await api(A + "/catalog", { method: "POST", body: JSON.stringify(d) }); await load(); runAgents([r.id]); }
     };
   }
 
-  // Список шагов с ↑↓✕ (как в макете-конструкторе).
-  function initSteps(b, initial) {
-    const list = b.querySelector("#f_steps_list");
-    let steps = (initial || "").split("\n").map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
-    if (!steps.length) steps = [""];
-    const paint = () => {
-      list.innerHTML = steps.map((v, i) => `<div style="display:flex;gap:6px;align-items:center">
-        <span class="ape-label" style="width:16px;text-align:right">${i + 1}</span>
-        <input class="f_step" data-i="${i}" value="${esc(v)}" style="flex:1" placeholder="что сделать на этом шаге"/>
-        <button type="button" class="ape-iconbtn st-up" data-i="${i}" title="выше">↑</button>
-        <button type="button" class="ape-iconbtn st-dn" data-i="${i}" title="ниже">↓</button>
-        <button type="button" class="ape-iconbtn st-rm" data-i="${i}" title="убрать">✕</button></div>`).join("");
-      list.querySelectorAll(".f_step").forEach((inp) => inp.oninput = () => { steps[+inp.dataset.i] = inp.value; });
-      const swap = (i, j) => { if (j < 0 || j >= steps.length) return; [steps[i], steps[j]] = [steps[j], steps[i]]; paint(); };
-      list.querySelectorAll(".st-up").forEach((x) => x.onclick = () => swap(+x.dataset.i, +x.dataset.i - 1));
-      list.querySelectorAll(".st-dn").forEach((x) => x.onclick = () => swap(+x.dataset.i, +x.dataset.i + 1));
-      list.querySelectorAll(".st-rm").forEach((x) => x.onclick = () => { steps.splice(+x.dataset.i, 1); if (!steps.length) steps = [""]; paint(); });
-    };
-    paint();
-    b.querySelector("#f_step_add").onclick = () => { steps.push(""); paint(); };
-  }
-
-  function editAgent(a) {
-    const ov = modal(a ? "Редактировать агента" : "Новый агент", form(a), (b) => {
-      const data = readForm(b);
-      if (!data.name) { alert("Укажи имя"); return false; }
-      const req = a
-        ? api(A + "/catalog/" + a.id, { method: "PATCH", body: JSON.stringify(data) })
-        : api(A + "/catalog", { method: "POST", body: JSON.stringify(data) });
-      req.then(load);
-    }, "Сохранить агента");
-    const b = ov.querySelector("#mBody");
-    initSteps(b, a ? a.steps : "");
-    // кнопка «Предпросмотр» system-prompt
-    const prev = document.createElement("button"); prev.type = "button"; prev.className = "btn sm"; prev.textContent = "👁 Предпросмотр";
-    prev.style.marginTop = "10px";
-    prev.onclick = () => {
-      const d = readForm(b);
-      const parts = [`Ты — ${d.name || "агент"}.`];
-      if (d.description) parts.push(d.description);
-      if (d.steps) parts.push("Методика (шаги):\n" + d.steps.split("\n").map((s, i) => `${i + 1}. ${s}`).join("\n"));
-      if (d.dod) parts.push("Definition of Done:\n" + d.dod);
-      if (d.antipatterns) parts.push("Избегай:\n" + d.antipatterns);
-      if (d.skills.length) parts.push("Скиллы: " + d.skills.join(", "));
-      alert(parts.join("\n\n"));
-    };
-    b.appendChild(prev);
-  }
-
+  // ── запуск (с governance-гейтом для outward) ──
   async function runAgents(ids) {
     if (!ids.length) return;
-    const ov = modal("Запуск " + (ids.length > 1 ? "цепочки" : "агента"),
-      `<textarea id="task" rows="3" style="width:100%" placeholder="Задача для агента(ов)…"></textarea>
-       <div id="res" style="margin-top:12px"></div>`, null);
-    const b = ov.querySelector("#mBody");
-    // добавим кнопку запуска внутрь модалки
-    const run = document.createElement("button"); run.className = "btn primary"; run.textContent = "Запустить";
-    run.style.marginTop = "8px"; b.insertBefore(run, b.querySelector("#res"));
-    run.onclick = async () => {
-      const task = b.querySelector("#task").value.trim(); if (!task) return;
-      // governance: если среди выбранных есть агент «наружу» — сначала approve/deny-гейт
-      const outward = agents.filter((a) => ids.includes(a.id) && a.outward);
-      if (outward.length && ctx.gate) {
-        const ok = await ctx.gate({
-          title: "Запуск агента с действием наружу",
-          fields: [["Агенты", outward.map((a) => a.name).join(", ")], ["Задача", task.slice(0, 80)]],
-          body: "Эти агенты помечены как действующие наружу. Запустить под вашу ответственность?",
-          allowLabel: "Разрешить запуск",
-        });
-        if (!ok) { b.querySelector("#res").innerHTML = `<div class="faint">✕ Отклонено — запуск не выполнен.</div>`; return; }
-      }
-      b.querySelector("#res").innerHTML = `<div class="faint">▍ агенты работают…</div>`;
-      const r = await api(A + "/run", { method: "POST", body: JSON.stringify({ agent_ids: ids, task }) });
-      if (!r.ok) { b.querySelector("#res").innerHTML = `<div style="color:var(--crit)">${r.error === "auth_required" ? "Нужен вход через GitHub" : "Ошибка: " + esc(r.error)}</div>`; return; }
-      b.querySelector("#res").innerHTML = r.steps.map((s) =>
-        `<div style="border:1px solid var(--b1);border-radius:11px;padding:10px;margin-bottom:8px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px">🤖 ${esc(s.name)}</div>
-          <div style="white-space:pre-wrap;font-size:13px">${esc(s.text)}</div></div>`).join("");
-    };
+    const outward = agents.filter((a) => ids.includes(a.id) && a.outward);
+    if (outward.length && ctx.gate) {
+      const ok = await ctx.gate({ title: "Запуск агента с действием наружу", fields: [["Агенты", outward.map((a) => a.name).join(", ")]], body: "Помечены как действующие наружу. Запустить?", allowLabel: "Разрешить запуск" });
+      if (!ok) return;
+    }
+    const task = prompt("Задача для агента(ов):"); if (!task) return;
+    const ov = document.createElement("div");
+    ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:60;backdrop-filter:blur(2px)";
+    ov.innerHTML = `<div style="width:min(640px,94vw);max-height:86vh;overflow:auto;padding:20px;border-radius:16px;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.45)"><div style="font-weight:700;margin-bottom:12px">Запуск</div><div id="res" style="font-size:13px;color:var(--ink-3)">▍ агенты работают…</div><div style="text-align:right;margin-top:14px"><button class="btn" id="cl">Закрыть</button></div></div>`;
+    document.body.appendChild(ov); ov.querySelector("#cl").onclick = () => ov.remove();
+    const r = await api(A + "/run", { method: "POST", body: JSON.stringify({ agent_ids: ids, task }) });
+    ov.querySelector("#res").innerHTML = r.ok ? r.steps.map((s) => `<div style="${CARD};padding:12px;gap:6px;margin-bottom:8px"><b style="font-size:13px">🤖 ${esc(s.name)}</b><div style="white-space:pre-wrap;font-size:13px;color:var(--ink-2)">${esc(s.text)}</div></div>`).join("") : `<div style="color:var(--danger-ink)">${r.error === "auth_required" ? "Нужен вход через GitHub" : "Ошибка: " + esc(r.error)}</div>`;
   }
 
-  function render() {
-    $("grid").innerHTML = agents.map((a) => `
-      <div class="ape-card" style="padding:16px;gap:8px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" class="pick" data-id="${a.id}" ${chain.has(a.id) ? "checked" : ""} title="в цепочку"/>
-          <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}${a.outward ? ` <span class="chip" style="color:var(--warn-ink)" title="действует наружу — запуск через подтверждение">🛡 наружу</span>` : ""}</span>
-          <span class="ed" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">✎</span>
-          <span class="del" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">🗑</span>
-        </div>
-        <div class="faint" style="font-size:12.5px;min-height:32px">${esc(a.description)}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">${(a.skills || []).map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>
-        <button class="btn primary run" data-id="${a.id}" style="margin-top:auto">▶ Запустить</button>
-      </div>`).join("") || `<div class="faint">Пусто. Нажми «＋ Создать агента».</div>`;
-    $("grid").querySelectorAll(".pick").forEach((c) => c.onclick = () => {
-      const id = +c.dataset.id; c.checked ? chain.add(id) : chain.delete(id);
-      $("runChain").disabled = chain.size === 0;
-      $("runChain").textContent = `▶ Запустить цепочку${chain.size ? " (" + chain.size + ")" : ""}`;
-    });
-    $("grid").querySelectorAll(".ed").forEach((e) => e.onclick = () => editAgent(agents.find((a) => a.id == e.dataset.id)));
-    $("grid").querySelectorAll(".del").forEach((e) => e.onclick = async () => {
-      if (confirm("Удалить агента?")) { await api(A + "/catalog/" + e.dataset.id, { method: "DELETE" }); load(); }
-    });
-    $("grid").querySelectorAll(".run").forEach((e) => e.onclick = () => runAgents([+e.dataset.id]));
-  }
-
-  async function load() { agents = await api(A + "/catalog"); render(); }
-
-  $("newAgent").onclick = () => editAgent(null);
-  $("runChain").onclick = () => runAgents(agents.filter((a) => chain.has(a.id)).map((a) => a.id));
   await load();
 }
