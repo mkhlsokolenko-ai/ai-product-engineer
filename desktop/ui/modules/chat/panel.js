@@ -73,9 +73,15 @@ export async function mount(root, ctx) {
           </div>
         </div>
       </div>
-      <div id="drawer" style="position:absolute;top:0;right:0;height:100%;width:390px;max-width:88%;transform:translateX(100%);transition:transform .2s ease;background:var(--panel);backdrop-filter:blur(20px);border-left:1px solid var(--line);z-index:9;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
-        <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)"><b style="flex:1">🕸 Агенты · вызов в тред</b><span id="drClose" style="cursor:pointer;color:var(--ink-3);font-size:16px">✕</span></div>
-        <div id="drBody" style="flex:1;overflow:auto;padding:14px"></div>
+      <div id="drawer" style="position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
+        <div style="flex:none;display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)">
+          <div style="flex:1;display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+            <button id="drTabTools" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">Инструменты</button>
+            <button id="drTabAgents" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer">Агенты</button>
+          </div>
+          <button id="drClose" title="Убрать шторку · Esc" style="width:30px;height:30px;flex:none;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink-2);font-size:14px;cursor:pointer">→</button>
+        </div>
+        <div id="drBody" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:11px"></div>
       </div>
     </section>`;
   const $ = (id) => root.querySelector("#" + id);
@@ -243,33 +249,62 @@ export async function mount(root, ctx) {
   }
 
   // ── шторка агентов ──
-  function openAgents() { if (!cur) return; $("drawer").style.transform = "translateX(0)"; renderDrawer(); }
+  // ── шторка с табами Инструменты / Агенты (1:1 из макета Overlays) ──
+  let drTab = "tools";
+  function openAgents(tab) { if (!cur) return; drTab = tab || "agents"; $("drawer").style.transform = "translateX(0)"; renderDrawer(); }
+  function drTabStyle(on) { return on ? "background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.2)" : "background:transparent;color:var(--ink-2)"; }
+  async function runAgentsInThread(ids, rl, task) {
+    $("drawer").style.transform = "translateX(100%)";
+    messages.push({ role: "user", content: "[агенты] " + task, meta: {} });
+    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    const el = $("col").querySelector("div:last-child .bub");
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агенты работают…</span></span>`;
+    const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify(ids.length ? { task, agent_ids: ids } : { task, roles: rl }) });
+    run.content = r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error));
+    render(); loadThreads();
+  }
   async function renderDrawer() {
-    const b = $("drBody"); b.innerHTML = `<div class="faint">Загрузка каталога…</div>`;
+    $("drTabTools").style.cssText += ";" + drTabStyle(drTab === "tools");
+    $("drTabAgents").style.cssText += ";" + drTabStyle(drTab === "agents");
+    $("drTabTools").onclick = () => { drTab = "tools"; renderDrawer(); };
+    $("drTabAgents").onclick = () => { drTab = "agents"; renderDrawer(); };
+    const b = $("drBody");
+    if (drTab === "tools") {
+      const tool = (glyph, title, note, inner) => `<div style="padding:14px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">${glyph}</span>
+          <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">${title}</span><span style="font-size:11.5px;line-height:1.4;color:var(--ink-3)">${note}</span></span></div>${inner || ""}</div>`;
+      const fmts = ["md", "pdf", "docx", "xlsx"].map((f) => `<button class="expf" data-f="${f}" style="padding:6px 11px;border:1px solid var(--line);border-radius:9999px;background:var(--hover);color:var(--ink-2);font-family:var(--mono);font-size:10.5px;font-weight:600;cursor:pointer">${f}</button>`).join("");
+      b.innerHTML =
+        tool("📎", "RAG · вложения", "файл → знания треда, ответы с опорой на него", `<button id="tlRag" style="padding:9px;border:1px solid rgba(129,140,248,.4);border-radius:10px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12px;font-weight:600;cursor:pointer">Прикрепить файл</button>`) +
+        tool("🔎", "OCR", "скан/картинка → текст → знания (модуль в разработке)", `<button disabled style="padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-3);font-size:12px;font-weight:600">Скоро</button>`) +
+        tool("🧠", "NLP", "извлечение сущностей / классификация (в разработке)", `<button disabled style="padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-3);font-size:12px;font-weight:600">Скоро</button>`) +
+        tool("📥", "Экспорт треда", "сохранить в «Загрузки»", `<div style="display:flex;gap:6px;flex-wrap:wrap">${fmts}</div>`);
+      const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.accept = ".txt,.md,.csv,.json"; fileIn.style.display = "none"; b.appendChild(fileIn);
+      b.querySelector("#tlRag").onclick = () => fileIn.click();
+      fileIn.onchange = async (e) => { const f = e.target.files[0]; $("drawer").style.transform = "translateX(100%)"; await attachFile(f); e.target.value = ""; };
+      b.querySelectorAll(".expf").forEach((x) => x.onclick = () => { $("drawer").style.transform = "translateX(100%)"; exportThread(x.dataset.f); });
+      return;
+    }
+    // agents tab
+    b.innerHTML = `<div class="faint">Загрузка каталога…</div>`;
     let cat = []; try { cat = await api("/api/modules/agents/catalog"); } catch {}
-    const catHTML = cat.map((a) => `<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:11px;padding:10px;margin-bottom:8px;cursor:pointer">
-      <input type="checkbox" class="da" value="${a.id}" style="margin-top:3px"/>
-      <span style="min-width:0"><b style="font-size:13px">${esc(a.name)}${a.outward ? " 🛡" : ""}</b><div style="font-size:12px;color:var(--ink-3)">${esc(a.description || "")}</div></span></label>`).join("")
-      || `<div style="font-size:12.5px;color:var(--ink-3)">Каталог пуст — вкладка 🕸 Граф / 🤖 Агенты.</div>`;
-    b.innerHTML = `<div style="font-size:12px;color:var(--ink-3);margin-bottom:8px">Выбери агента(ов) и задай задачу — выполнится в этот тред.</div>
-      <textarea id="drTask" rows="3" style="width:100%;margin-bottom:10px" placeholder="Задача для агента(ов)…"></textarea>
-      <div class="ape-label" style="margin-bottom:6px">Каталог</div>${catHTML}
-      <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${r.id}" style="margin-top:3px"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div></details>
-      <button class="btn primary" id="drRun" style="width:100%;margin-top:12px">▶ Запустить в тред</button>`;
+    const roleTxt = (ctx.roles && ctx.roles[0]) || "manager";
+    const catHTML = cat.map((a) => `<div style="padding:14px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px"><label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer"><input type="checkbox" class="da" value="${a.id}"/><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">${esc(a.name)}${a.outward ? " 🛡" : ""}</span><span style="font-size:11.5px;line-height:1.4;color:var(--ink-3)">${esc(a.description || "")}</span></span></label></div></div>`).join("")
+      || `<div style="font-size:12.5px;color:var(--ink-3)">Каталог пуст — соберите агента во вкладке 🤖 Агенты.</div>`;
+    b.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+        <span style="font-size:11.5px;color:var(--ink-2)">Видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
+      <textarea id="drTask" rows="3" style="${"padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"}" placeholder="Задача для агента(ов)…"></textarea>
+      ${catHTML}
+      <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${r.id}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div></details>
+      <button id="drRun" style="padding:11px;border:1px solid rgba(129,140,248,.4);border-radius:11px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12.5px;font-weight:600;cursor:pointer">▶ Запустить в тред</button>`;
     if ($("inp").value.trim()) b.querySelector("#drTask").value = $("inp").value.trim();
-    b.querySelector("#drRun").onclick = async () => {
+    b.querySelector("#drRun").onclick = () => {
       const task = b.querySelector("#drTask").value.trim();
       const ids = [...b.querySelectorAll(".da:checked")].map((x) => +x.value);
       const rl = [...b.querySelectorAll(".rl:checked")].map((x) => x.value);
       if (!task || (!ids.length && !rl.length)) { alert("Укажи задачу и агента/роль"); return; }
-      $("drawer").style.transform = "translateX(100%)";
-      messages.push({ role: "user", content: "[агенты] " + task, meta: {} });
-      const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
-      const el = $("col").querySelector("div:last-child .bub");
-      if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агенты работают…</span></span>`;
-      const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify(ids.length ? { task, agent_ids: ids } : { task, roles: rl }) });
-      run.content = r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error));
-      render(); loadThreads();
+      runAgentsInThread(ids, rl, task);
     };
   }
 

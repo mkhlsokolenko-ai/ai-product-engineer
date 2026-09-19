@@ -191,10 +191,10 @@ function initTheme() {
 
 // Командная палитра (Ctrl+K) — из макета «Поиск и команды».
 function buildCommands() {
-  const cmds = visibleModules().map((m) => ({ label: "Открыть: " + m.title, run: () => loadModule(m.id) }));
-  cmds.push({ label: "Новый чат", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } });
-  cmds.push({ label: "Тема: светлая / тёмная", run: toggleTheme });
-  if (window.ape && window.ape.updater) cmds.push({ label: "Проверить обновления", run: () => window.ape.updater.check() });
+  const cmds = visibleModules().map((m) => ({ glyph: icon(m.icon), label: "Открыть: " + m.title, note: "вкладка", run: () => loadModule(m.id) }));
+  cmds.push({ glyph: "➕", label: "Новый тред", note: "чат", keys: "Ctrl N", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } });
+  cmds.push({ glyph: "🌓", label: "Переключить тему", note: "светлая / тёмная", run: toggleTheme });
+  if (window.ape && window.ape.updater) cmds.push({ glyph: "⬇", label: "Проверить обновления", note: "апдейтер", run: () => window.ape.updater.check() });
   return cmds;
 }
 function openPalette() {
@@ -202,19 +202,27 @@ function openPalette() {
   const all = buildCommands();
   const ov = document.createElement("div");
   ov.id = "cmdPalette";
-  ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:100;backdrop-filter:blur(2px)";
-  ov.innerHTML = `<div style="width:min(560px,92vw);background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--b1);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden">
-    <input id="cmdInp" placeholder="Команда…" autocomplete="off" style="width:100%;border:0;border-bottom:1px solid var(--b1);border-radius:0;padding:14px 16px;font-size:14px;background:transparent"/>
-    <div id="cmdList" style="max-height:52vh;overflow:auto;padding:6px"></div></div>`;
+  ov.style = "position:fixed;inset:0;z-index:90;display:flex;align-items:flex-start;justify-content:center;padding-top:14vh";
+  ov.innerHTML = `<div id="palBack" style="position:absolute;inset:0;background:rgba(4,7,18,.6);backdrop-filter:blur(6px)"></div>
+    <div style="position:relative;width:600px;max-width:92vw;border-radius:16px;background:var(--panel-2);border:1px solid var(--line-2);box-shadow:0 24px 70px rgba(0,0,0,.45);backdrop-filter:blur(20px);overflow:hidden;animation:ape-drop .28s ease-out">
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)">${apeMascot("idle", 24)}
+        <input id="cmdInp" placeholder="Поиск и команды…" autocomplete="off" style="flex:1;min-width:0;padding:8px 0;border:none;background:transparent;color:var(--ink);font-size:15px;outline:none"/>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">Esc</span></div>
+      <div id="cmdList" style="max-height:46vh;overflow-y:auto;padding:8px"></div></div>`;
   document.body.appendChild(ov);
   let items = all, sel = 0;
   const list = ov.querySelector("#cmdList");
   const close = () => ov.remove();
   const runSel = () => { const c = items[sel]; close(); if (c) c.run(); };
   const paint = () => {
-    list.innerHTML = items.map((c, i) => `<div class="cmd" data-i="${i}" style="padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;background:${i === sel ? "var(--accent-bg)" : "transparent"};color:${i === sel ? "var(--accent-2)" : "var(--ink1)"}">${c.label}</div>`).join("") || `<div class="faint" style="padding:10px">Ничего не найдено</div>`;
+    list.innerHTML = items.map((c, i) => `<button class="cmd" data-i="${i}" style="width:100%;display:flex;align-items:center;gap:12px;padding:11px 12px;border:none;border-radius:10px;background:${i === sel ? "var(--hover)" : "transparent"};text-align:left;cursor:pointer">
+      <span style="width:26px;height:26px;flex:none;border-radius:8px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:13px">${c.glyph || "▸"}</span>
+      <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600;color:var(--ink)">${c.label}</span>${c.note ? `<span style="font-size:11px;color:var(--ink-3)">${c.note}</span>` : ""}</span>
+      ${c.keys ? `<span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">${c.keys}</span>` : ""}</button>`).join("")
+      || `<div style="padding:26px;text-align:center;font-size:12.5px;color:var(--ink-3)">Ничего не нашлось.</div>`;
     list.querySelectorAll(".cmd").forEach((e) => { e.onmouseenter = () => { sel = +e.dataset.i; paint(); }; e.onclick = runSel; });
   };
+  ov.querySelector("#palBack").onclick = close;
   const inp = ov.querySelector("#cmdInp");
   inp.oninput = () => { const q = inp.value.toLowerCase(); items = all.filter((c) => c.label.toLowerCase().includes(q)); sel = 0; paint(); };
   ov.onkeydown = (e) => {
