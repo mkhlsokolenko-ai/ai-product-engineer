@@ -5,7 +5,7 @@ const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt
 function modal(title, bodyHTML, onOk, okLabel) {
   const ov = document.createElement("div");
   ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50";
-  ov.innerHTML = `<div style="background:var(--panel);border:1px solid var(--b1);border-radius:14px;width:min(620px,94vw);max-height:88vh;overflow:auto;padding:20px">
+  ov.innerHTML = `<div class="ape-card" style="width:min(620px,94vw);max-height:88vh;overflow:auto;padding:20px;gap:0">
     <div style="font-weight:600;font-size:15px;margin-bottom:14px">${esc(title)}</div>
     <div id="mBody">${bodyHTML}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
@@ -139,7 +139,7 @@ export async function mount(root, ctx) {
       const r = await api(A + "/run", { method: "POST", body: JSON.stringify({ agent_ids: ids, task }) });
       if (!r.ok) { b.querySelector("#res").innerHTML = `<div style="color:var(--crit)">${r.error === "auth_required" ? "Нужен вход через GitHub" : "Ошибка: " + esc(r.error)}</div>`; return; }
       b.querySelector("#res").innerHTML = r.steps.map((s) =>
-        `<div style="border:1px solid var(--b1);border-radius:10px;padding:10px;margin-bottom:8px">
+        `<div style="border:1px solid var(--b1);border-radius:11px;padding:10px;margin-bottom:8px">
           <div style="font-weight:600;font-size:13px;margin-bottom:4px">🤖 ${esc(s.name)}</div>
           <div style="white-space:pre-wrap;font-size:13px">${esc(s.text)}</div></div>`).join("");
     };

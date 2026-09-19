@@ -38,10 +38,10 @@ export async function mount(root, ctx) {
     const s = await api(C + "/sources");
     srcHTML = `<h3 style="margin:26px 0 10px">Рабочие источники и доступ</h3>
       <div style="display:flex;flex-direction:column;gap:8px;max-width:640px">
-      ${s.connectors.map((c) => `<div style="display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--b1);border-radius:10px;padding:10px 14px">
+      ${s.connectors.map((c) => `<div style="display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--b1);border-radius:11px;padding:10px 14px">
         <span style="flex:1;font-size:13.5px">${esc(c.title)}</span>
         <span class="chip">${c.status === "planned" ? "скоро" : esc(c.status)}</span></div>`).join("")}
-      <div style="display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--b1);border-radius:10px;padding:10px 14px">
+      <div style="display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--b1);border-radius:11px;padding:10px 14px">
         <span style="flex:1;font-size:13.5px">RBAC — роли и доступ к инструментам/источникам</span>
         <span class="chip">скоро</span></div></div>
       <div class="faint" style="font-size:12px;margin-top:8px">Коннекторы Word/Excel/ИС и RBAC подключаются на этапе смычки с ABOP (Data Plane). Настроенные источники дадут агенту контекст последних рабочих файлов прямо в чате.</div>`;

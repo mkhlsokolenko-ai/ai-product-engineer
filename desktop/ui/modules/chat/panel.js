@@ -22,7 +22,7 @@ function md(t) {
 function modal(title, bodyHTML, onOk) {
   const ov = document.createElement("div");
   ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50";
-  ov.innerHTML = `<div style="background:var(--panel);border:1px solid var(--b1);border-radius:14px;width:min(560px,92vw);max-height:86vh;overflow:auto;padding:20px">
+  ov.innerHTML = `<div class="ape-card" style="width:min(560px,92vw);max-height:86vh;overflow:auto;padding:20px;gap:0">
     <div style="font-weight:600;font-size:15px;margin-bottom:14px">${esc(title)}</div>
     <div id="mBody">${bodyHTML}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
@@ -143,12 +143,12 @@ export async function mount(root, ctx) {
       <span data-copy="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">⧉ копировать</span>
       <span data-regen="${idx}" style="cursor:pointer;color:var(--ink3);font-size:11.5px">↻ ещё раз</span></div>`;
     return `<div class="bubble" style="max-width:80%;align-self:${mine ? "flex-end" : "flex-start"}">
-      <div class="bcontent" style="background:${mine ? "var(--accent-bg)" : "var(--panel)"};border:1px solid var(--b1);border-radius:12px;padding:10px 13px;white-space:pre-wrap;font-size:13.5px;line-height:1.5">${body}</div>${meta}${acts}</div>`;
+      <div class="bcontent" style="background:${mine ? "var(--accent-bg)" : "var(--panel)"};border:1px solid var(--b1);border-radius:14px;padding:10px 13px;white-space:pre-wrap;font-size:13.5px;line-height:1.5">${body}</div>${meta}${acts}</div>`;
   }
   function renderMessages() {
     if (!messages.length) {
       const cards = TEMPLATES.map((t, i) =>
-        `<div data-tpl="${i}" style="cursor:pointer;border:1px solid var(--b1);background:var(--panel);border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600">${t[0]}</div>`).join("");
+        `<div data-tpl="${i}" style="cursor:pointer;border:1px solid var(--b1);background:var(--panel);border-radius:14px;padding:12px 14px;font-size:13px;font-weight:600">${t[0]}</div>`).join("");
       $("msgs").innerHTML = `<div style="margin:auto;max-width:640px;text-align:center">
         <div class="faint" style="margin-bottom:14px">С чего начать? Выбери шаблон или просто напиши сообщение.</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${cards}</div></div>`;
@@ -269,7 +269,8 @@ export async function mount(root, ctx) {
     messages.push(asst); renderMessages();
     const el = $("msgs").querySelector(".bubble:last-child .bcontent");
     const setTxt = (t2) => { if (el) { el.textContent = t2; $("msgs").scrollTop = $("msgs").scrollHeight; } };
-    setTxt("▍ думает…");
+    const dot = (d) => `<span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:var(--accent-2);animation:ape-dot 1s ${d}s infinite"></span>`;
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:5px;align-items:center;padding:2px 0">${dot(0)}${dot(0.15)}${dot(0.3)}</span>`;
     curAbort = new AbortController(); setSending(true);
     try {
       const resp = await fetch(ctx.base + M + "/threads/" + cur.id + "/send-stream",
@@ -334,7 +335,7 @@ export async function mount(root, ctx) {
     const body = $("drBody");
     body.innerHTML = `<div class="faint">Загрузка каталога…</div>`;
     let cat = []; try { cat = await api("/api/modules/agents/catalog"); } catch {}
-    const catHTML = cat.map((a) => `<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--b1);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer">
+    const catHTML = cat.map((a) => `<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--b1);border-radius:11px;padding:10px;margin-bottom:8px;cursor:pointer">
         <input type="checkbox" class="da" value="${a.id}" style="margin-top:3px"/>
         <span style="min-width:0"><b style="font-size:13px">${esc(a.name)}</b><div class="faint" style="font-size:12px">${esc(a.description || "")}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${(a.skills || []).map((s) => `<span class="chip" style="font-size:10px">${esc(s)}</span>`).join("")}</div></span></label>`).join("")
