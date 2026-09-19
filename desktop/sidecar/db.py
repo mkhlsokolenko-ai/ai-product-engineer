@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS attachments (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_att_thread ON attachments(thread_id);
+-- Пользовательский каталог агентов (конструктор): методика в человекочитаемых полях.
+CREATE TABLE IF NOT EXISTS agents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    skills TEXT NOT NULL DEFAULT '',        -- csv id скиллов
+    steps TEXT NOT NULL DEFAULT '',         -- шаги, по строке
+    dod TEXT NOT NULL DEFAULT '',           -- definition of done, по строке
+    antipatterns TEXT NOT NULL DEFAULT '',  -- анти-паттерны, по строке
+    profile TEXT NOT NULL DEFAULT 'standard',
+    created_at REAL NOT NULL
+);
 """
 
 

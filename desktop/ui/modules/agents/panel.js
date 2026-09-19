@@ -1,0 +1,138 @@
+// Модуль «Агенты» (фронт): каталог + конструктор (скилл/шаги/DoD/анти) + запуск цепочек.
+const A = "/api/modules/agents";
+const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+function modal(title, bodyHTML, onOk, okLabel) {
+  const ov = document.createElement("div");
+  ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:50";
+  ov.innerHTML = `<div style="background:var(--panel);border:1px solid var(--b1);border-radius:14px;width:min(620px,94vw);max-height:88vh;overflow:auto;padding:20px">
+    <div style="font-weight:600;font-size:15px;margin-bottom:14px">${esc(title)}</div>
+    <div id="mBody">${bodyHTML}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+      <button class="btn" id="mCancel">Закрыть</button>${onOk ? `<button class="btn primary" id="mOk">${esc(okLabel || "Готово")}</button>` : ""}</div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.querySelector("#mCancel").onclick = close;
+  if (onOk) ov.querySelector("#mOk").onclick = () => { if (onOk(ov.querySelector("#mBody")) !== false) close(); };
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  return ov;
+}
+
+export async function mount(root, ctx) {
+  const { api } = ctx;
+  let agents = [], skills = [], chain = new Set();
+  try { skills = await api(A + "/skills"); } catch {}
+
+  root.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--b1)">
+      <h2 style="margin:0;flex:1;font-size:17px">Каталог агентов</h2>
+      <button class="btn" id="runChain" disabled>▶ Запустить цепочку</button>
+      <button class="btn primary" id="newAgent">＋ Создать агента</button>
+    </div>
+    <div id="grid" style="flex:1;overflow:auto;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+  </div>`;
+  const $ = (id) => root.querySelector("#" + id);
+
+  function skillOptions(sel) {
+    return skills.map((s) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:2px 8px 2px 0;font-size:12.5px">
+      <input type="checkbox" class="sk" value="${s.id}" ${sel.includes(s.id) ? "checked" : ""}/> ${s.id}</label>`).join("");
+  }
+
+  function form(a) {
+    a = a || { name: "", description: "", skills: [], steps: "", dod: "", antipatterns: "", profile: "standard" };
+    return `
+      <label class="faint" style="font-size:12px">Имя</label>
+      <input id="f_name" value="${esc(a.name)}" style="width:100%;margin-bottom:8px" placeholder="напр. Аналитик отзывов"/>
+      <label class="faint" style="font-size:12px">Описание</label>
+      <input id="f_desc" value="${esc(a.description)}" style="width:100%;margin-bottom:8px" placeholder="что делает"/>
+      <label class="faint" style="font-size:12px">Скиллы</label>
+      <div style="margin:4px 0 8px">${skillOptions(a.skills || [])}</div>
+      <label class="faint" style="font-size:12px">Шаги (методика)</label>
+      <textarea id="f_steps" rows="3" style="width:100%;margin-bottom:8px" placeholder="1. …&#10;2. …">${esc(a.steps)}</textarea>
+      <label class="faint" style="font-size:12px">Definition of Done</label>
+      <textarea id="f_dod" rows="2" style="width:100%;margin-bottom:8px" placeholder="как понять, что сделано хорошо">${esc(a.dod)}</textarea>
+      <label class="faint" style="font-size:12px">Анти-паттерны (чего не делать)</label>
+      <textarea id="f_anti" rows="2" style="width:100%;margin-bottom:8px">${esc(a.antipatterns)}</textarea>
+      <label class="faint" style="font-size:12px">Профиль</label>
+      <select id="f_profile" style="width:auto;display:block;margin-top:4px">
+        <option value="standard"${a.profile === "standard" ? " selected" : ""}>standard · 30B</option>
+        <option value="code"${a.profile === "code" ? " selected" : ""}>code</option>
+        <option value="research"${a.profile === "research" ? " selected" : ""}>ask</option>
+      </select>`;
+  }
+
+  function readForm(b) {
+    return {
+      name: b.querySelector("#f_name").value.trim(),
+      description: b.querySelector("#f_desc").value.trim(),
+      skills: [...b.querySelectorAll(".sk:checked")].map((x) => x.value),
+      steps: b.querySelector("#f_steps").value.trim(),
+      dod: b.querySelector("#f_dod").value.trim(),
+      antipatterns: b.querySelector("#f_anti").value.trim(),
+      profile: b.querySelector("#f_profile").value,
+    };
+  }
+
+  function editAgent(a) {
+    modal(a ? "Редактировать агента" : "Новый агент", form(a), (b) => {
+      const data = readForm(b);
+      if (!data.name) { alert("Укажи имя"); return false; }
+      const req = a
+        ? api(A + "/catalog/" + a.id, { method: "PATCH", body: JSON.stringify(data) })
+        : api(A + "/catalog", { method: "POST", body: JSON.stringify(data) });
+      req.then(load);
+    }, "Сохранить");
+  }
+
+  async function runAgents(ids) {
+    if (!ids.length) return;
+    const ov = modal("Запуск " + (ids.length > 1 ? "цепочки" : "агента"),
+      `<textarea id="task" rows="3" style="width:100%" placeholder="Задача для агента(ов)…"></textarea>
+       <div id="res" style="margin-top:12px"></div>`, null);
+    const b = ov.querySelector("#mBody");
+    // добавим кнопку запуска внутрь модалки
+    const run = document.createElement("button"); run.className = "btn primary"; run.textContent = "Запустить";
+    run.style.marginTop = "8px"; b.insertBefore(run, b.querySelector("#res"));
+    run.onclick = async () => {
+      const task = b.querySelector("#task").value.trim(); if (!task) return;
+      b.querySelector("#res").innerHTML = `<div class="faint">▍ агенты работают…</div>`;
+      const r = await api(A + "/run", { method: "POST", body: JSON.stringify({ agent_ids: ids, task }) });
+      if (!r.ok) { b.querySelector("#res").innerHTML = `<div style="color:var(--crit)">${r.error === "auth_required" ? "Нужен вход через GitHub" : "Ошибка: " + esc(r.error)}</div>`; return; }
+      b.querySelector("#res").innerHTML = r.steps.map((s) =>
+        `<div style="border:1px solid var(--b1);border-radius:10px;padding:10px;margin-bottom:8px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:4px">🤖 ${esc(s.name)}</div>
+          <div style="white-space:pre-wrap;font-size:13px">${esc(s.text)}</div></div>`).join("");
+    };
+  }
+
+  function render() {
+    $("grid").innerHTML = agents.map((a) => `
+      <div style="border:1px solid var(--b1);background:var(--panel);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" class="pick" data-id="${a.id}" ${chain.has(a.id) ? "checked" : ""} title="в цепочку"/>
+          <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}</span>
+          <span class="ed" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">✎</span>
+          <span class="del" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">🗑</span>
+        </div>
+        <div class="faint" style="font-size:12.5px;min-height:32px">${esc(a.description)}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${(a.skills || []).map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>
+        <button class="btn primary run" data-id="${a.id}" style="margin-top:auto">▶ Запустить</button>
+      </div>`).join("") || `<div class="faint">Пусто. Нажми «＋ Создать агента».</div>`;
+    $("grid").querySelectorAll(".pick").forEach((c) => c.onclick = () => {
+      const id = +c.dataset.id; c.checked ? chain.add(id) : chain.delete(id);
+      $("runChain").disabled = chain.size === 0;
+      $("runChain").textContent = `▶ Запустить цепочку${chain.size ? " (" + chain.size + ")" : ""}`;
+    });
+    $("grid").querySelectorAll(".ed").forEach((e) => e.onclick = () => editAgent(agents.find((a) => a.id == e.dataset.id)));
+    $("grid").querySelectorAll(".del").forEach((e) => e.onclick = async () => {
+      if (confirm("Удалить агента?")) { await api(A + "/catalog/" + e.dataset.id, { method: "DELETE" }); load(); }
+    });
+    $("grid").querySelectorAll(".run").forEach((e) => e.onclick = () => runAgents([+e.dataset.id]));
+  }
+
+  async function load() { agents = await api(A + "/catalog"); render(); }
+
+  $("newAgent").onclick = () => editAgent(null);
+  $("runChain").onclick = () => runAgents(agents.filter((a) => chain.has(a.id)).map((a) => a.id));
+  await load();
+}

@@ -20,7 +20,7 @@ let active = null;
 
 function icon(name) {
   // минимальные глиф-иконки рейла (без внешних зависимостей)
-  return { chat: "💬", cabinet: "👤", ocr: "🔎", ml: "🧠", abop: "🕸" }[name] || "▦";
+  return { chat: "💬", agents: "🤖", cabinet: "👤", ocr: "🔎", ml: "🧠", abop: "🕸" }[name] || "▦";
 }
 
 async function renderAuth() {
