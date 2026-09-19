@@ -48,7 +48,8 @@ export async function mount(root, ctx) {
       <label class="faint" style="font-size:12px">Скиллы</label>
       <div style="margin:4px 0 8px">${skillOptions(a.skills || [])}</div>
       <label class="faint" style="font-size:12px">Шаги (методика)</label>
-      <textarea id="f_steps" rows="3" style="width:100%;margin-bottom:8px" placeholder="1. …&#10;2. …">${esc(a.steps)}</textarea>
+      <div id="f_steps_list" style="display:flex;flex-direction:column;gap:6px;margin:4px 0 6px"></div>
+      <button type="button" class="btn sm" id="f_step_add" style="margin-bottom:8px">＋ шаг</button>
       <label class="faint" style="font-size:12px">Definition of Done</label>
       <textarea id="f_dod" rows="2" style="width:100%;margin-bottom:8px" placeholder="как понять, что сделано хорошо">${esc(a.dod)}</textarea>
       <label class="faint" style="font-size:12px">Анти-паттерны (чего не делать)</label>
@@ -62,26 +63,65 @@ export async function mount(root, ctx) {
   }
 
   function readForm(b) {
+    const steps = [...b.querySelectorAll(".f_step")].map((i) => i.value.trim()).filter(Boolean);
     return {
       name: b.querySelector("#f_name").value.trim(),
       description: b.querySelector("#f_desc").value.trim(),
       skills: [...b.querySelectorAll(".sk:checked")].map((x) => x.value),
-      steps: b.querySelector("#f_steps").value.trim(),
+      steps: steps.join("\n"),
       dod: b.querySelector("#f_dod").value.trim(),
       antipatterns: b.querySelector("#f_anti").value.trim(),
       profile: b.querySelector("#f_profile").value,
     };
   }
 
+  // Список шагов с ↑↓✕ (как в макете-конструкторе).
+  function initSteps(b, initial) {
+    const list = b.querySelector("#f_steps_list");
+    let steps = (initial || "").split("\n").map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
+    if (!steps.length) steps = [""];
+    const paint = () => {
+      list.innerHTML = steps.map((v, i) => `<div style="display:flex;gap:6px;align-items:center">
+        <span class="ape-label" style="width:16px;text-align:right">${i + 1}</span>
+        <input class="f_step" data-i="${i}" value="${esc(v)}" style="flex:1" placeholder="что сделать на этом шаге"/>
+        <button type="button" class="ape-iconbtn st-up" data-i="${i}" title="выше">↑</button>
+        <button type="button" class="ape-iconbtn st-dn" data-i="${i}" title="ниже">↓</button>
+        <button type="button" class="ape-iconbtn st-rm" data-i="${i}" title="убрать">✕</button></div>`).join("");
+      list.querySelectorAll(".f_step").forEach((inp) => inp.oninput = () => { steps[+inp.dataset.i] = inp.value; });
+      const swap = (i, j) => { if (j < 0 || j >= steps.length) return; [steps[i], steps[j]] = [steps[j], steps[i]]; paint(); };
+      list.querySelectorAll(".st-up").forEach((x) => x.onclick = () => swap(+x.dataset.i, +x.dataset.i - 1));
+      list.querySelectorAll(".st-dn").forEach((x) => x.onclick = () => swap(+x.dataset.i, +x.dataset.i + 1));
+      list.querySelectorAll(".st-rm").forEach((x) => x.onclick = () => { steps.splice(+x.dataset.i, 1); if (!steps.length) steps = [""]; paint(); });
+    };
+    paint();
+    b.querySelector("#f_step_add").onclick = () => { steps.push(""); paint(); };
+  }
+
   function editAgent(a) {
-    modal(a ? "Редактировать агента" : "Новый агент", form(a), (b) => {
+    const ov = modal(a ? "Редактировать агента" : "Новый агент", form(a), (b) => {
       const data = readForm(b);
       if (!data.name) { alert("Укажи имя"); return false; }
       const req = a
         ? api(A + "/catalog/" + a.id, { method: "PATCH", body: JSON.stringify(data) })
         : api(A + "/catalog", { method: "POST", body: JSON.stringify(data) });
       req.then(load);
-    }, "Сохранить");
+    }, "Сохранить агента");
+    const b = ov.querySelector("#mBody");
+    initSteps(b, a ? a.steps : "");
+    // кнопка «Предпросмотр» system-prompt
+    const prev = document.createElement("button"); prev.type = "button"; prev.className = "btn sm"; prev.textContent = "👁 Предпросмотр";
+    prev.style.marginTop = "10px";
+    prev.onclick = () => {
+      const d = readForm(b);
+      const parts = [`Ты — ${d.name || "агент"}.`];
+      if (d.description) parts.push(d.description);
+      if (d.steps) parts.push("Методика (шаги):\n" + d.steps.split("\n").map((s, i) => `${i + 1}. ${s}`).join("\n"));
+      if (d.dod) parts.push("Definition of Done:\n" + d.dod);
+      if (d.antipatterns) parts.push("Избегай:\n" + d.antipatterns);
+      if (d.skills.length) parts.push("Скиллы: " + d.skills.join(", "));
+      alert(parts.join("\n\n"));
+    };
+    b.appendChild(prev);
   }
 
   async function runAgents(ids) {
