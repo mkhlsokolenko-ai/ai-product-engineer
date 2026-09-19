@@ -232,8 +232,8 @@ export async function mount(root, ctx) {
       const ov = modal("Экспорт чата в «Загрузки»", `<div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" data-f="md">Markdown (.md)</button>
         <button class="btn" data-f="pdf">PDF (.pdf)</button>
-        <button class="btn" data-f="docx" disabled title="в v0.1.3">Word (.docx)</button>
-        <button class="btn" data-f="xlsx" disabled title="в v0.1.3">Excel (.xlsx)</button>
+        <button class="btn" data-f="docx">Word (.docx)</button>
+        <button class="btn" data-f="xlsx">Excel (.xlsx)</button>
       </div>`, () => true);
       ov.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { if (!b.disabled) { exportThread(b.dataset.f); ov.remove(); } });
     };

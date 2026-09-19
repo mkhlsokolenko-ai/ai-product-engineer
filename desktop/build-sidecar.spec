@@ -4,7 +4,8 @@
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
-for pkg in ("uvicorn", "fastapi", "starlette", "pydantic", "pydantic_core", "anyio", "sidecar"):
+for pkg in ("uvicorn", "fastapi", "starlette", "pydantic", "pydantic_core", "anyio",
+            "docx", "openpyxl", "sidecar"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
