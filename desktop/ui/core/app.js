@@ -12,7 +12,33 @@ export async function api(path, opts = {}) {
   if (!r.ok) throw new Error("HTTP " + r.status);
   return r.json();
 }
-export const ctx = { api, base: API, user: null };
+// Approve/deny-гейт (из макета Overlays «Подтверждение действия»). Governance-слой:
+// действие наружу (письмо/тикет/коммит) требует явного разрешения. Promise<bool>.
+// Сейчас — визуально; при подключении RBAC/коннекторов станет обязательным барьером.
+export function apeGate(action) {
+  return new Promise((resolve) => {
+    const a = action || {};
+    const rows = (a.fields || []).map((f) => `<div style="display:flex;gap:10px;font-size:13px;margin-bottom:6px"><span class="faint" style="width:90px;flex:none">${esc(f[0])}</span><span>${esc(f[1])}</span></div>`).join("");
+    const ov = document.createElement("div");
+    ov.style = "position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:120;backdrop-filter:blur(2px)";
+    ov.innerHTML = `<div class="ape-card" style="width:min(520px,92vw);gap:0;padding:20px;animation:ape-drop .18s ease">
+      <div class="ape-label" style="margin-bottom:6px">Требуется подтверждение · governance</div>
+      <div style="font-size:16px;font-weight:700;letter-spacing:-.3px;margin-bottom:12px">${esc(a.title || "Подтверждение действия")}</div>
+      ${rows}
+      ${a.body ? `<div style="background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin:8px 0;white-space:pre-wrap">${esc(a.body)}</div>` : ""}
+      <div class="faint" style="font-size:11.5px;margin:6px 0 2px">Наружу ничего не уйдёт без вашего решения. Маска ПДн применена.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn" id="gDeny">Отклонить</button><button class="btn primary" id="gAllow">${esc(a.allowLabel || "Разрешить")}</button></div></div>`;
+    document.body.appendChild(ov);
+    const done = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector("#gAllow").onclick = () => done(true);
+    ov.querySelector("#gDeny").onclick = () => done(false);
+    ov.onclick = (e) => { if (e.target === ov) done(false); };
+  });
+}
+function esc(s) { return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+export const ctx = { api, base: API, user: null, gate: apeGate };
 
 const $ = (id) => document.getElementById(id);
 let MODULES = [];
@@ -20,7 +46,7 @@ let active = null;
 
 function icon(name) {
   // минимальные глиф-иконки рейла (без внешних зависимостей)
-  return { chat: "💬", agents: "🤖", cabinet: "👤", ocr: "🔎", ml: "🧠", abop: "🕸" }[name] || "▦";
+  return { chat: "💬", agents: "🤖", graphlens: "🕸", opslens: "🗺", security: "🛡", cabinet: "👤", ocr: "🔎", ml: "🧠", abop: "🕸" }[name] || "▦";
 }
 
 async function renderAuth() {
