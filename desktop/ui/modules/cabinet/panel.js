@@ -12,7 +12,7 @@ function tile(label, value, sub) {
 
 export async function mount(root, ctx) {
   const { api } = ctx;
-  root.innerHTML = `<div style="padding:22px;overflow:auto;height:100%"><div id="cb">Загрузка…</div></div>`;
+  root.innerHTML = `<div style="flex:1;min-width:0;padding:22px;overflow:auto;height:100%"><div id="cb">Загрузка…</div></div>`;
   const cb = root.querySelector("#cb");
 
   let u;

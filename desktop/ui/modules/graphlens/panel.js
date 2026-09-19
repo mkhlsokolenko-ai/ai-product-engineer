@@ -2,7 +2,7 @@
 // Предпросмотр: показывает структуру ДС; интерактивный холст (drag-drop, связи) — отдельный заход.
 export async function mount(root) {
   const palette = ["ожидание", "входящие", "наружу", "модель", "инструмент", "условие"];
-  root.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
+  root.innerHTML = `<div style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)">
       <h1 class="ape-h1" style="margin:0;flex:1;font-size:22px">Граф агента</h1>
       <span class="chip">предпросмотр · интерактив в разработке</span>

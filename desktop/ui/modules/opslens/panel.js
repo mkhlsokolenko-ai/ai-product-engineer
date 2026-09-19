@@ -7,7 +7,7 @@ export async function mount(root) {
     ["Отправка", "governance-гейт", "warn"], ["Аналитика", "1 агент", "ok"],
   ];
   const dot = (s) => ({ ok: "var(--ok-ink)", warn: "var(--warn-ink)", idle: "var(--ink-3)" }[s] || "var(--ink-3)");
-  root.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
+  root.innerHTML = `<div style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line)">
       <h1 class="ape-h1" style="margin:0;flex:1;font-size:22px">Операции</h1>
       <span class="chip">предпросмотр · только наблюдение</span>

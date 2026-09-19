@@ -24,6 +24,7 @@ class AgentIn(BaseModel):
     dod: str = ""
     antipatterns: str = ""
     profile: str = "standard"
+    outward: int = 0   # действует наружу → запуск через approve/deny-гейт
 
 
 class RunIn(BaseModel):
@@ -66,23 +67,23 @@ def skills() -> list[dict]:
 def catalog() -> list[dict]:
     _seed_if_empty()
     return [_row(a) for a in db.q(
-        "SELECT id,name,description,skills,steps,dod,antipatterns,profile FROM agents ORDER BY id")]
+        "SELECT id,name,description,skills,steps,dod,antipatterns,profile,outward FROM agents ORDER BY id")]
 
 
 @router.post("/catalog")
 def create(body: AgentIn) -> dict:
-    aid = db.run("INSERT INTO agents(name,description,skills,steps,dod,antipatterns,profile,created_at) "
-                 "VALUES(?,?,?,?,?,?,?,?)",
+    aid = db.run("INSERT INTO agents(name,description,skills,steps,dod,antipatterns,profile,outward,created_at) "
+                 "VALUES(?,?,?,?,?,?,?,?,?)",
                  (body.name, body.description, ",".join(body.skills), body.steps, body.dod,
-                  body.antipatterns, body.profile, db.now()))
+                  body.antipatterns, body.profile, int(body.outward), db.now()))
     return {"ok": True, "id": aid}
 
 
 @router.patch("/catalog/{aid}")
 def update(aid: int, body: AgentIn) -> dict:
-    db.run("UPDATE agents SET name=?,description=?,skills=?,steps=?,dod=?,antipatterns=?,profile=? WHERE id=?",
+    db.run("UPDATE agents SET name=?,description=?,skills=?,steps=?,dod=?,antipatterns=?,profile=?,outward=? WHERE id=?",
            (body.name, body.description, ",".join(body.skills), body.steps, body.dod,
-            body.antipatterns, body.profile, aid))
+            body.antipatterns, body.profile, int(body.outward), aid))
     return {"ok": True}
 
 

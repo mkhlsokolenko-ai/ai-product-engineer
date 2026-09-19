@@ -2,6 +2,8 @@
 // Модули НЕ хардкодятся: берём список из /api/modules и динамически импортируем панель.
 // Добавить фичу = новый backend-модуль + ui/modules/<id>/panel.js. Ядро не меняется.
 
+import { apeLogo, apeMascot } from "./ape.js";
+
 const API = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:8799";
 
 export async function api(path, opts = {}) {
@@ -38,7 +40,7 @@ export function apeGate(action) {
 }
 function esc(s) { return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
-export const ctx = { api, base: API, user: null, gate: apeGate };
+export const ctx = { api, base: API, user: null, gate: apeGate, mascot: apeMascot };
 
 const $ = (id) => document.getElementById(id);
 let MODULES = [];
@@ -54,6 +56,7 @@ async function renderAuth() {
   let me = { authed: false };
   try { me = await api("/api/auth/me"); } catch {}
   ctx.user = me.user || null;
+  ctx.roles = me.roles || [];
   if (me.authed) {
     box.innerHTML = `<span class="sub" style="font-size:12.5px">${me.user || ""}</span>
       <button class="btn sm" id="logoutBtn" style="margin-left:10px">Выйти</button>`;
@@ -72,14 +75,26 @@ async function renderAuth() {
   }
 }
 
+// RBAC-видимость модулей: admin/advanced — только lecturer/admin (реальные роли из JWT).
+// Клиент фильтрует каталог для UX; фактический энфорс — на шлюзе.
+const MODULE_ROLES = { security: ["lecturer", "admin"], graphlens: ["lecturer", "admin"], opslens: ["lecturer", "admin"] };
+function canSee(id) {
+  const req = MODULE_ROLES[id];
+  if (!req) return true;
+  return (ctx.roles || []).some((r) => req.includes(r));
+}
+function visibleModules() { return MODULES.filter((m) => canSee(m.id)); }
+function railBtn(glyph, label, on) {
+  const bg = on ? "var(--accent-bg)" : "var(--panel)";
+  const fg = on ? "var(--accent-ink)" : "var(--ink-2)";
+  const bd = on ? "var(--line-2)" : "var(--line)";
+  return `<span style="font-size:16px;line-height:1">${glyph}</span><span style="font-size:10px;font-weight:600">${label}</span>`
+    .replace(/^/, `<button data-rb style="width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">`) + `</button>`;
+}
 function renderNav() {
-  $("railNav").innerHTML = MODULES.map(
-    (m) => `<button class="railbtn ${m.id === active ? "on" : ""}" data-id="${m.id}">
-      <div style="font-size:18px">${icon(m.icon)}</div><div>${m.title}</div></button>`
-  ).join("");
-  $("railNav").querySelectorAll(".railbtn").forEach((b) => {
-    b.onclick = () => loadModule(b.dataset.id);
-  });
+  $("railNav").innerHTML = visibleModules().map((m) =>
+    railBtn(icon(m.icon), m.title, m.id === active).replace("data-rb", `data-id="${m.id}"`)).join("");
+  $("railNav").querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
 }
 
 // Быстрые функции в рейле (настраиваемые, persist localStorage) — из макета.
@@ -90,16 +105,20 @@ function quickActions() {
     { id: "palette", label: "Команды", icon: "⌘", run: openPalette },
     { id: "theme", label: "Тема", icon: "🌓", run: toggleTheme },
   ];
-  MODULES.forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
+  visibleModules().forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
   return a;
 }
 function getPins() { try { return JSON.parse(localStorage.getItem("ape_quickfns")) || QF_DEFAULT; } catch { return QF_DEFAULT; } }
+function slotBtn(inner, id, title, dashed) {
+  const b = dashed ? "dashed var(--line-2)" : "solid var(--line)";
+  return `<button ${id} title="${title}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:1px ${b};border-radius:12px;background:var(--panel);color:var(--ink-2);font-size:15px">${inner}</button>`;
+}
 function renderQuick() {
   const el = document.getElementById("railQuick"); if (!el) return;
   const acts = quickActions(), pins = getPins();
-  el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? `<button class="railbtn qf" data-id="${a.id}" title="${a.label}"><div style="font-size:18px">${a.icon}</div></button>` : ""; }).join("")
-    + `<button class="railbtn" id="qfAdd" title="Настроить быстрые функции"><div style="font-size:16px">＋</div></button>`;
-  el.querySelectorAll(".qf").forEach((b) => b.onclick = () => { const a = acts.find((x) => x.id === b.dataset.id); if (a) a.run(); });
+  el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? slotBtn(a.icon, `data-id="${a.id}"`, a.label) : ""; }).join("")
+    + slotBtn("＋", `id="qfAdd"`, "Настроить быстрые функции", true);
+  el.querySelectorAll("[data-id]").forEach((b) => b.onclick = () => { const a = acts.find((x) => x.id === b.dataset.id); if (a) a.run(); });
   document.getElementById("qfAdd").onclick = openQuickManage;
 }
 function openQuickManage() {
@@ -120,12 +139,15 @@ async function loadModule(id) {
   active = id;
   renderNav();
   const m = MODULES.find((x) => x.id === id);
-  $("topTitle").textContent = m ? m.title : "APE Desktop";
-  const root = $("panel");
-  root.innerHTML = `<div class="faint" style="padding:24px">Загрузка модуля «${m ? m.title : id}»…</div>`;
+  const panel = $("panel");
+  panel.innerHTML = `<div class="faint" style="padding:24px">Загрузка модуля «${m ? m.title : id}»…</div>`;
   try {
     const mod = await import(`../modules/${m.ui}/panel.js`);
-    root.innerHTML = "";
+    panel.innerHTML = "";
+    // единый flex-контейнер: чат кладёт aside+section, прочие — одну панель (flex:1)
+    const root = document.createElement("div");
+    root.style.cssText = "flex:1;min-width:0;min-height:0;display:flex";
+    panel.appendChild(root);
     await mod.mount(root, ctx);
   } catch (e) {
     root.innerHTML = `<div style="padding:24px;color:var(--crit)">Модуль не загрузился: ${e.message}</div>`;
@@ -169,7 +191,7 @@ function initTheme() {
 
 // Командная палитра (Ctrl+K) — из макета «Поиск и команды».
 function buildCommands() {
-  const cmds = MODULES.map((m) => ({ label: "Открыть: " + m.title, run: () => loadModule(m.id) }));
+  const cmds = visibleModules().map((m) => ({ label: "Открыть: " + m.title, run: () => loadModule(m.id) }));
   cmds.push({ label: "Новый чат", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } });
   cmds.push({ label: "Тема: светлая / тёмная", run: toggleTheme });
   if (window.ape && window.ape.updater) cmds.push({ label: "Проверить обновления", run: () => window.ape.updater.check() });
@@ -205,11 +227,24 @@ function openPalette() {
   paint(); inp.focus();
 }
 
+async function refreshCost() {
+  try {
+    const u = await api("/api/modules/cabinet/usage");
+    if (u.ok && u.report && u.report.week) {
+      const w = u.report.week;
+      const cv = document.getElementById("costVal"); if (cv) cv.textContent = (w.cost_rub != null ? w.cost_rub.toFixed(0) : "0") + " ₽";
+      const qv = document.getElementById("quotaVal"); if (qv) { const left = 100 - Math.round(w.used_pct || 0); qv.textContent = "квота " + left + "%"; qv.style.color = left < 15 ? "var(--danger-ink)" : "var(--ink-2)"; }
+    }
+  } catch {}
+}
+
 async function boot() {
+  const lg = document.getElementById("apeLogo"); if (lg) lg.innerHTML = apeLogo(30);
   initTheme();
   try { const h = await api("/api/health"); const v = document.getElementById("verChip"); if (v) v.textContent = "v" + (h.version || "?"); } catch {}
   if (window.ape && window.ape.updater) window.ape.updater.onStatus(renderUpdate);
   await renderAuth();
+  refreshCost();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }
   renderNav();
   renderQuick();

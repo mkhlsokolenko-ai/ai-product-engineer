@@ -52,8 +52,13 @@ def modules() -> list[dict]:
 @app.get("/api/auth/me")
 def me() -> dict:
     if not auth.token():
-        return {"authed": False}
-    return {"authed": True, "user": auth.claims().get("preferred_username")}
+        return {"authed": False, "roles": []}
+    cl = auth.claims()
+    roles = (cl.get("realm_access") or {}).get("roles") or []
+    # оставляем только осмысленные для RBAC (без служебных keycloak-ролей)
+    roles = [r for r in roles if not r.startswith("default-roles") and r not in
+             ("offline_access", "uma_authorization")]
+    return {"authed": True, "user": cl.get("preferred_username"), "roles": roles}
 
 
 @app.post("/api/auth/login")

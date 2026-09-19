@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS agents (
     dod TEXT NOT NULL DEFAULT '',           -- definition of done, по строке
     antipatterns TEXT NOT NULL DEFAULT '',  -- анти-паттерны, по строке
     profile TEXT NOT NULL DEFAULT 'standard',
+    outward INTEGER NOT NULL DEFAULT 0,      -- действует наружу → требует approve/deny
     created_at REAL NOT NULL
 );
 """
@@ -69,6 +70,10 @@ def init() -> None:
             c.execute("ALTER TABLE threads ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # колонка уже есть
+        try:
+            c.execute("ALTER TABLE agents ADD COLUMN outward INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         c.commit()
 
 

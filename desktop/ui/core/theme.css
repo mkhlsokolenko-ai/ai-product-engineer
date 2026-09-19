@@ -77,6 +77,9 @@
 @keyframes ape-dot { 0%, 100% { transform: translateY(0); opacity: .55; } 50% { transform: translateY(-3px); opacity: 1; } }
 @keyframes ape-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
 @keyframes ape-sheen { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+@keyframes ab-dot { 0%, 100% { transform: translateY(0); opacity: .55; } 50% { transform: translateY(-3px); opacity: 1; } }
+@keyframes ab-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+@keyframes ape-drop { from { transform: translateY(-14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ── база ── */
 *, *::before, *::after { box-sizing: border-box; }

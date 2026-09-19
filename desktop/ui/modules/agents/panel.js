@@ -23,7 +23,7 @@ export async function mount(root, ctx) {
   let agents = [], skills = [], chain = new Set();
   try { skills = await api(A + "/skills"); } catch {}
 
-  root.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
+  root.innerHTML = `<div style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--b1)">
       <h2 style="margin:0;flex:1;font-size:17px">Каталог агентов</h2>
       <button class="btn" id="runChain" disabled>▶ Запустить цепочку</button>
@@ -59,7 +59,9 @@ export async function mount(root, ctx) {
         <option value="standard"${a.profile === "standard" ? " selected" : ""}>standard · 30B</option>
         <option value="code"${a.profile === "code" ? " selected" : ""}>code</option>
         <option value="research"${a.profile === "research" ? " selected" : ""}>ask</option>
-      </select>`;
+      </select>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12.5px">
+        <input type="checkbox" id="f_outward" ${a.outward ? "checked" : ""}/> 🛡 Действует наружу (запуск через подтверждение)</label>`;
   }
 
   function readForm(b) {
@@ -72,6 +74,7 @@ export async function mount(root, ctx) {
       dod: b.querySelector("#f_dod").value.trim(),
       antipatterns: b.querySelector("#f_anti").value.trim(),
       profile: b.querySelector("#f_profile").value,
+      outward: b.querySelector("#f_outward").checked ? 1 : 0,
     };
   }
 
@@ -135,6 +138,17 @@ export async function mount(root, ctx) {
     run.style.marginTop = "8px"; b.insertBefore(run, b.querySelector("#res"));
     run.onclick = async () => {
       const task = b.querySelector("#task").value.trim(); if (!task) return;
+      // governance: если среди выбранных есть агент «наружу» — сначала approve/deny-гейт
+      const outward = agents.filter((a) => ids.includes(a.id) && a.outward);
+      if (outward.length && ctx.gate) {
+        const ok = await ctx.gate({
+          title: "Запуск агента с действием наружу",
+          fields: [["Агенты", outward.map((a) => a.name).join(", ")], ["Задача", task.slice(0, 80)]],
+          body: "Эти агенты помечены как действующие наружу. Запустить под вашу ответственность?",
+          allowLabel: "Разрешить запуск",
+        });
+        if (!ok) { b.querySelector("#res").innerHTML = `<div class="faint">✕ Отклонено — запуск не выполнен.</div>`; return; }
+      }
       b.querySelector("#res").innerHTML = `<div class="faint">▍ агенты работают…</div>`;
       const r = await api(A + "/run", { method: "POST", body: JSON.stringify({ agent_ids: ids, task }) });
       if (!r.ok) { b.querySelector("#res").innerHTML = `<div style="color:var(--crit)">${r.error === "auth_required" ? "Нужен вход через GitHub" : "Ошибка: " + esc(r.error)}</div>`; return; }
@@ -150,7 +164,7 @@ export async function mount(root, ctx) {
       <div class="ape-card" style="padding:16px;gap:8px">
         <div style="display:flex;align-items:center;gap:8px">
           <input type="checkbox" class="pick" data-id="${a.id}" ${chain.has(a.id) ? "checked" : ""} title="в цепочку"/>
-          <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}</span>
+          <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}${a.outward ? ` <span class="chip" style="color:var(--warn-ink)" title="действует наружу — запуск через подтверждение">🛡 наружу</span>` : ""}</span>
           <span class="ed" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">✎</span>
           <span class="del" data-id="${a.id}" style="cursor:pointer;color:var(--ink3)">🗑</span>
         </div>

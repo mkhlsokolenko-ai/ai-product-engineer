@@ -21,7 +21,7 @@ export async function mount(root, ctx) {
 
   const card = (title, body) => `<div class="ape-card" style="padding:16px;gap:6px"><div class="ape-label">${esc(title)}</div><div style="font-size:13px;line-height:1.5;color:var(--ink-2)">${body}</div></div>`;
 
-  root.innerHTML = `<div style="height:100%;overflow:auto;padding:22px">
+  root.innerHTML = `<div style="flex:1;min-width:0;height:100%;overflow:auto;padding:22px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <h1 class="ape-h1" style="margin:0;flex:1">Безопасность</h1>${badge}
       <button class="btn" id="gateDemo">Демо approve/deny</button>
