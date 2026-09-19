@@ -4,9 +4,9 @@ const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt
 const fmt = (n) => (n || 0).toLocaleString("ru-RU");
 
 function tile(label, value, sub) {
-  return `<div style="background:var(--panel);border:1px solid var(--b1);border-radius:12px;padding:14px 16px;min-width:170px">
-    <div class="faint" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.04em">${esc(label)}</div>
-    <div style="font-size:24px;font-weight:700;margin-top:4px">${value}</div>
+  return `<div class="ape-card" style="padding:14px 16px;min-width:170px;gap:4px">
+    <div class="ape-label">${esc(label)}</div>
+    <div style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-top:4px">${value}</div>
     <div class="faint" style="font-size:12px">${esc(sub || "")}</div></div>`;
 }
 
@@ -47,5 +47,5 @@ export async function mount(root, ctx) {
       <div class="faint" style="font-size:12px;margin-top:8px">Коннекторы Word/Excel/ИС и RBAC подключаются на этапе смычки с ABOP (Data Plane). Настроенные источники дадут агенту контекст последних рабочих файлов прямо в чате.</div>`;
   } catch {}
 
-  cb.innerHTML = `<h2 style="margin:0 0 16px">Личный кабинет</h2>${usageHTML}${srcHTML}`;
+  cb.innerHTML = `<h1 class="ape-h1" style="margin:0 0 16px">Личный кабинет</h1>${usageHTML}${srcHTML}`;
 }

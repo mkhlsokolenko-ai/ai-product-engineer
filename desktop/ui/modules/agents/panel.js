@@ -107,7 +107,7 @@ export async function mount(root, ctx) {
 
   function render() {
     $("grid").innerHTML = agents.map((a) => `
-      <div style="border:1px solid var(--b1);background:var(--panel);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px">
+      <div class="ape-card" style="padding:16px;gap:8px">
         <div style="display:flex;align-items:center;gap:8px">
           <input type="checkbox" class="pick" data-id="${a.id}" ${chain.has(a.id) ? "checked" : ""} title="в цепочку"/>
           <span style="font-weight:600;font-size:14px;flex:1">${esc(a.name)}</span>
