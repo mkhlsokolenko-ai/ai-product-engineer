@@ -64,7 +64,8 @@ class AttachIn(BaseModel):
 
 class AgentsIn(BaseModel):
     task: str
-    roles: list[str] = []   # id из ROLE_PRESETS; пусто → DEFAULT_ROLES
+    roles: list[str] = []       # id из ROLE_PRESETS (быстрые пресеты)
+    agent_ids: list[int] = []   # id из каталога (модуль agents) — приоритетнее roles
 
 
 class ExportIn(BaseModel):
@@ -355,21 +356,46 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
                              headers={"Cache-Control": "no-cache"})
 
 
-# ── мультиагенты: передача задачи по ВЫБРАННЫМ ролям ──
+def _catalog_system(a: dict) -> str:
+    """system-prompt агента из каталога (методика в полях)."""
+    parts = [f"Ты — {a['name']}."]
+    if a.get("description"):
+        parts.append(a["description"])
+    if a.get("steps"):
+        parts.append("Методика (шаги):\n" + a["steps"])
+    if a.get("dod"):
+        parts.append("Definition of Done:\n" + a["dod"])
+    if a.get("antipatterns"):
+        parts.append("Избегай (анти-паттерны):\n" + a["antipatterns"])
+    hints = [f"[{s}] {SKILLS[s]}" for s in (a.get("skills") or "").split(",") if s in SKILLS]
+    if hints:
+        parts.append("Методики-скиллы:\n" + "\n".join(hints))
+    return "\n\n".join(parts)
+
+
+# ── мультиагенты: каталог (agent_ids) ИЛИ быстрые роли (roles), цепочкой в текущий тред ──
 @router.post("/threads/{thread_id}/agents")
 def agents(thread_id: int, body: AgentsIn) -> dict:
-    roles = [r for r in (body.roles or DEFAULT_ROLES) if r in ROLE_PRESETS] or DEFAULT_ROLES
+    # specs: список (имя, system) — из каталога приоритетно, иначе из пресетов
+    specs = []
+    if body.agent_ids:
+        for aid in body.agent_ids:
+            rows = db.q("SELECT name,description,skills,steps,dod,antipatterns FROM agents WHERE id=?", (aid,))
+            if rows:
+                specs.append((rows[0]["name"], _catalog_system(rows[0])))
+    if not specs:
+        roles = [r for r in (body.roles or DEFAULT_ROLES) if r in ROLE_PRESETS] or DEFAULT_ROLES
+        specs = [(ROLE_PRESETS[r][0], f"Ты — {ROLE_PRESETS[r][0]}. {ROLE_PRESETS[r][1]}") for r in roles]
+    names = ", ".join(n for n, _ in specs)
     db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
-           (thread_id, "user", f"[агенты: {', '.join(ROLE_PRESETS[r][0] for r in roles)}] {body.task}", "{}", db.now()))
+           (thread_id, "user", f"[агенты: {names}] {body.task}", "{}", db.now()))
     outputs, prior = [], ""
     try:
-        for rid in roles:
-            name, brief = ROLE_PRESETS[rid]
+        for name, system in specs:
             prefix = ("Наработки предыдущих ролей:\n" + prior) if prior else ""
-            p = f"Задача: {body.task}\n\n{prefix}"
-            r = gateway.call("chat", {"prompt": p, "session_id": _sid(thread_id) + "-agents",
-                                      "profile": "standard", "system": f"Ты — {name}. {brief}",
-                                      "max_tokens": 1200})
+            r = gateway.call("chat", {"prompt": f"Задача: {body.task}\n\n{prefix}",
+                                      "session_id": _sid(thread_id) + "-agents", "profile": "standard",
+                                      "system": system, "max_tokens": 1200})
             t = r.get("text", "")
             outputs.append(f"### {name}\n{t}")
             prior += f"\n[{name}]: {t}\n"
@@ -379,6 +405,6 @@ def agents(thread_id: int, body: AgentsIn) -> dict:
         return {"ok": False, "error": str(e)}
     combined = "\n\n".join(outputs)
     mid = db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
-                 (thread_id, "assistant", combined, json.dumps({"agents": roles}), db.now()))
+                 (thread_id, "assistant", combined, json.dumps({"agents": names}), db.now()))
     db.run("UPDATE threads SET updated_at=? WHERE id=?", (db.now(), thread_id))
     return {"ok": True, "id": mid, "content": combined}

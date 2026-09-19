@@ -15,7 +15,7 @@ PORTAL = "https://engineer-ai.pro"
 CLIENT = "portal"
 
 APP_NAME = "APE Desktop"
-APP_VERSION = "0.1.4"
+APP_VERSION = "0.1.5"
 
 # ── локальные данные приложения (конфиг, токены, треды/сообщения, кэш модулей) ──
 DATA_DIR = Path(os.environ.get("APE_DESKTOP_HOME") or (Path.home() / ".ape-desktop"))

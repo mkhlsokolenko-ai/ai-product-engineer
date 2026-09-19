@@ -63,10 +63,17 @@ export async function mount(root, ctx) {
         <div id="msgs" style="flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px"></div>
         <div id="files" style="padding:0 16px"></div>
         <div id="composer" style="border-top:1px solid var(--b1);padding:12px 16px"></div>
+        <div id="drawer" style="position:absolute;top:0;right:0;height:100%;width:390px;max-width:88%;transform:translateX(100%);transition:transform .2s ease;background:var(--panel);border-left:1px solid var(--b1);z-index:6;display:flex;flex-direction:column;box-shadow:-10px 0 28px rgba(0,0,0,.28)">
+          <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--b1)">
+            <b style="flex:1">🤖 Агенты · вызов в чат</b><span id="drClose" style="cursor:pointer;color:var(--ink3);font-size:16px">✕</span>
+          </div>
+          <div id="drBody" style="flex:1;overflow:auto;padding:14px"></div>
+        </div>
       </div>
     </div>`;
   const $ = (id) => root.querySelector("#" + id);
   $("thSearch").oninput = (e) => { threadFilter = e.target.value.toLowerCase(); renderThreads(); };
+  $("drClose").onclick = () => closeDrawer();
   // drag-drop файлов в правую панель
   const rp = $("rightPane");
   rp.addEventListener("dragover", (e) => { e.preventDefault(); if (cur) $("dropHint").style.display = "flex"; });
@@ -81,7 +88,7 @@ export async function mount(root, ctx) {
   window.__apeKeyHandler = (e) => {
     if (!root.isConnected) return;
     if (e.ctrlKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); $("newTh").click(); }
-    else if (e.key === "Escape" && curAbort) { curAbort.abort(); }
+    else if (e.key === "Escape") { if ($("drawer") && $("drawer").style.transform === "translateX(0px)") closeDrawer(); else if (curAbort) curAbort.abort(); }
   };
   document.addEventListener("keydown", window.__apeKeyHandler);
 
@@ -318,24 +325,42 @@ export async function mount(root, ctx) {
   async function attach(e) { const f = e.target.files[0]; await attachFile(f); e.target.value = ""; }
 
   function openAgents() {
-    if (!cur) return;
-    const rolesHTML = roles.map((r) =>
-      `<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0"><input type="checkbox" class="rl" value="${r.id}" ${r.default ? "checked" : ""} style="margin-top:3px" />
-        <span><b>${esc(r.name)}</b><div class="faint" style="font-size:12px">${esc(r.brief)}</div></span></label>`).join("");
-    modal("Команда агентов под задачу", `
-      <textarea id="atask" rows="3" placeholder="Опиши задачу для команды…" style="width:100%;resize:vertical"></textarea>
-      <div class="faint" style="font-size:12px;margin:12px 0 4px">Выбери роли (выполняются цепочкой, передавая наработки):</div>
-      ${rolesHTML}`, async (b) => {
-      const task = b.querySelector("#atask").value.trim();
-      const sel = [...b.querySelectorAll(".rl:checked")].map((x) => x.value);
-      if (!task || !sel.length) { alert("Укажи задачу и хотя бы одну роль"); return false; }
+    if (!cur) { alert("Сначала создай или выбери чат."); return; }
+    $("drawer").style.transform = "translateX(0)";
+    renderDrawer();
+  }
+  function closeDrawer() { $("drawer").style.transform = "translateX(100%)"; }
+  async function renderDrawer() {
+    const body = $("drBody");
+    body.innerHTML = `<div class="faint">Загрузка каталога…</div>`;
+    let cat = []; try { cat = await api("/api/modules/agents/catalog"); } catch {}
+    const catHTML = cat.map((a) => `<label style="display:flex;gap:8px;align-items:flex-start;border:1px solid var(--b1);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" class="da" value="${a.id}" style="margin-top:3px"/>
+        <span style="min-width:0"><b style="font-size:13px">${esc(a.name)}</b><div class="faint" style="font-size:12px">${esc(a.description || "")}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${(a.skills || []).map((s) => `<span class="chip" style="font-size:10px">${esc(s)}</span>`).join("")}</div></span></label>`).join("")
+      || `<div class="faint" style="font-size:12.5px">Каталог пуст. Открой вкладку 🤖 Агенты слева → «Создать агента».</div>`;
+    const rolesHTML = roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0"><input type="checkbox" class="rl" value="${r.id}" style="margin-top:3px"/><span style="font-size:12.5px"><b>${esc(r.name)}</b> <span class="faint">${esc(r.brief)}</span></span></label>`).join("");
+    body.innerHTML = `
+      <div class="faint" style="font-size:12px;margin-bottom:8px">Выбери агента или несколько (цепочка), задай задачу — выполнится в этот чат.</div>
+      <textarea id="drTask" rows="3" style="width:100%;margin-bottom:10px" placeholder="Задача для агента(ов)…"></textarea>
+      <div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Мои агенты (каталог)</div>
+      ${catHTML}
+      <details style="margin-top:8px"><summary class="faint" style="cursor:pointer;font-size:12px">Быстрые роли (без настройки)</summary><div style="margin-top:6px">${rolesHTML}</div></details>
+      <button class="btn primary" id="drRun" style="width:100%;margin-top:12px">▶ Запустить в чат</button>`;
+    const inp = $("inp"); if (inp && inp.value.trim()) body.querySelector("#drTask").value = inp.value.trim();
+    body.querySelector("#drRun").onclick = async () => {
+      const task = body.querySelector("#drTask").value.trim();
+      const ids = [...body.querySelectorAll(".da:checked")].map((x) => +x.value);
+      const rl = [...body.querySelectorAll(".rl:checked")].map((x) => x.value);
+      if (!task || (!ids.length && !rl.length)) { alert("Укажи задачу и хотя бы одного агента/роль"); return; }
+      closeDrawer();
       messages.push({ role: "user", content: "[агенты] " + task, meta: {} });
-      messages.push({ role: "assistant", content: "Агенты работают…", meta: {} }); renderMessages();
-      const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify({ task, roles: sel }) });
+      messages.push({ role: "assistant", content: "▍ агенты работают…", meta: {} }); renderMessages();
+      const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify(ids.length ? { task, agent_ids: ids } : { task, roles: rl }) });
       messages.pop();
-      messages.push({ role: "assistant", content: r.ok ? r.content : "Ошибка: " + r.error, meta: {} });
-      renderMessages();
-    });
+      messages.push({ role: "assistant", content: r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error)), meta: {} });
+      renderMessages(); loadThreads();
+    };
   }
 
   $("newTh").onclick = async () => {
