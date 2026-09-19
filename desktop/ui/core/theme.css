@@ -1,90 +1,116 @@
-/* Дизайн-токены оболочки (портальный DS). Тема СВАПАЕТСЯ: меняешь только этот файл —
-   логика (core/app.js, модули) цвета не хардкодит, берёт из переменных. */
+/* Дизайн-система APE Desktop — стеклянный бренд ABOP (снято с макета APE Desktop.dc.html).
+   Имена переменных сохранены (модули их используют), значения переведены на glass + indigo-mesh.
+   Тема свапается data-theme на <html>. Токены: см. desktop/docs-design-tokens.md. */
 :root {
-  --bg0: #0b0f14;
-  --panel: #12181f;
-  --raised: #1a222e;
-  --b1: #1f2a3a;
-  --ink1: #e6edf3;
-  --ink2: #8b98a5;
-  --ink3: #5c6975;
-  --accent: #5b8cff;
-  --accent-bg: rgba(91, 140, 255, 0.14);
-  --ok: #3fb950;
-  --warn: #e3b341;
-  --crit: #ff4d4f;
-  --ui: "Geist", "Segoe UI", system-ui, sans-serif;
+  --bg0: #0f172a;                       /* база под стеклом */
+  --mesh-a: rgba(99, 102, 241, 0.16);   /* indigo glow */
+  --mesh-b: rgba(139, 92, 246, 0.14);   /* violet glow */
+  --panel: rgba(255, 255, 255, 0.05);   /* стекло-панель */
+  --raised: rgba(255, 255, 255, 0.09);
+  --b1: rgba(255, 255, 255, 0.12);      /* границы */
+  --field: rgba(15, 23, 42, 0.55);      /* поля ввода */
+  --ink1: #ffffff;
+  --ink2: rgba(255, 255, 255, 0.62);
+  --ink3: rgba(255, 255, 255, 0.42);
+  --accent: #6366f1;                    /* indigo primary */
+  --accent-2: #818cf8;
+  --accent-bg: rgba(99, 102, 241, 0.18);
+  --violet: #8b5cf6;
+  --ok: #6ee7b7;
+  --warn: #fbbf24;
+  --crit: #fca5a5;
+  --ui: "Inter", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --radius: 12px;
+  --blur: blur(16px);
 }
 
-/* Светлая тема — тот же набор переменных, переключается data-theme на <html>. */
+/* Светлая тема — стекло на светлом фоне. */
 :root[data-theme="light"] {
-  --bg0: #f7f8fa;
-  --panel: #ffffff;
-  --raised: #eef1f5;
-  --b1: #e2e6ec;
-  --ink1: #0b0f14;
-  --ink2: #566372;
-  --ink3: #8b98a5;
-  --accent: #3b6ef5;
-  --accent-bg: rgba(59, 110, 245, 0.12);
-  --ok: #2f9e44;
+  --bg0: #eef1f7;
+  --mesh-a: rgba(99, 102, 241, 0.12);
+  --mesh-b: rgba(139, 92, 246, 0.10);
+  --panel: rgba(255, 255, 255, 0.66);
+  --raised: rgba(255, 255, 255, 0.86);
+  --b1: rgba(15, 23, 42, 0.10);
+  --field: rgba(255, 255, 255, 0.75);
+  --ink1: #0f172a;
+  --ink2: rgba(15, 23, 42, 0.64);
+  --ink3: rgba(15, 23, 42, 0.45);
+  --accent: #4f46e5;
+  --accent-2: #6366f1;
+  --accent-bg: rgba(79, 70, 229, 0.12);
+  --ok: #059669;
   --warn: #b7791f;
-  --crit: #e03131;
+  --crit: #dc2626;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: var(--bg0);
   color: var(--ink1);
   font-family: var(--ui);
   font-size: 14px;
   overflow: hidden;
+  background:
+    radial-gradient(58% 48% at 10% 0%, var(--mesh-a), transparent 60%),
+    radial-gradient(52% 44% at 100% 100%, var(--mesh-b), transparent 60%),
+    var(--bg0);
+  background-attachment: fixed;
 }
 button { font-family: var(--ui); cursor: pointer; }
 .mono { font-family: var(--mono); }
 .faint { color: var(--ink3); }
 .sub { color: var(--ink2); }
 
-/* каркас: левый рейл модулей + основная область */
+/* каркас: левый рейл + основная область */
 #app { display: flex; height: 100vh; }
 #rail {
-  width: 66px; flex-shrink: 0; background: var(--panel);
+  width: 66px; flex-shrink: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: var(--blur);
   border-right: 1px solid var(--b1); display: flex; flex-direction: column;
   align-items: center; padding: 14px 0; gap: 6px;
 }
-#rail .logo { font-family: var(--mono); font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+#rail .logo { font-family: var(--mono); font-weight: 700; color: var(--accent-2); margin-bottom: 10px; }
 .railbtn {
-  width: 46px; height: 46px; border-radius: 10px; border: 0; background: transparent;
+  width: 46px; height: 46px; border-radius: 12px; border: 1px solid transparent; background: transparent;
   color: var(--ink2); font-size: 11px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 2px;
 }
-.railbtn.on { background: var(--accent-bg); color: var(--accent); }
+.railbtn.on { background: var(--accent-bg); color: var(--accent-2); border-color: var(--b1); }
 #rail .spacer { flex: 1; }
 
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 #topbar {
   height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--b1);
+  background: rgba(255, 255, 255, 0.04); backdrop-filter: var(--blur);
   display: flex; align-items: center; padding: 0 16px; gap: 12px;
 }
 #topbar .title { font-weight: 600; flex: 1; }
 #panel { flex: 1; min-height: 0; overflow: hidden; }
 
 .btn {
-  border: 1px solid var(--b1); background: transparent; color: var(--ink1);
-  padding: 7px 12px; border-radius: 9px; font-weight: 600; font-size: 12.5px;
+  border: 1px solid var(--b1); background: var(--panel); backdrop-filter: var(--blur); color: var(--ink1);
+  padding: 7px 13px; border-radius: 9999px; font-weight: 600; font-size: 12.5px;
+  transition: background .15s, border-color .15s;
 }
+.btn:hover { background: var(--raised); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.sm { padding: 4px 9px; font-size: 12px; }
+.btn.primary:hover { background: var(--accent-2); }
+.btn.sm { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: default; }
 .chip {
-  display: inline-block; padding: 3px 8px; border-radius: 7px; font-size: 11px;
-  font-family: var(--mono); background: var(--raised); color: var(--ink2);
+  display: inline-block; padding: 3px 9px; border-radius: 9999px; font-size: 11px;
+  font-family: var(--mono); background: var(--panel); border: 1px solid var(--b1); color: var(--ink2);
 }
-.chip.on { background: var(--accent-bg); color: var(--accent); }
+.chip.on { background: var(--accent-bg); color: var(--accent-2); border-color: var(--accent); }
 input, textarea, select {
-  background: var(--bg0); color: var(--ink1); border: 1px solid var(--b1);
-  border-radius: 9px; padding: 8px 10px; font-family: var(--ui); font-size: 13px; outline: none;
+  background: var(--field); color: var(--ink1); border: 1px solid var(--b1);
+  border-radius: 10px; padding: 8px 11px; font-family: var(--ui); font-size: 13px; outline: none;
 }
-input:focus, textarea:focus { border-color: var(--accent); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+
+/* стекло на ключевых поверхностях, которые модули рисуют инлайново */
+.bcontent, #drawer, #composer, #files, #updateBar { backdrop-filter: var(--blur); }
+#drawer { box-shadow: -20px 0 50px rgba(0, 0, 0, 0.32); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 9999px; }
