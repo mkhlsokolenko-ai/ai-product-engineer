@@ -51,17 +51,43 @@ def _read_local(path: str) -> str:
     return p.read_text(encoding="utf-8", errors="replace")
 
 
+class ExchangeReq(BaseModel):
+    target: str
+    audience: str = ""
+
+
+# Удалённые системы для делегированного доступа (token-exchange от имени пользователя).
+REMOTE = [
+    {"id": "onedrive", "title": "OneDrive / SharePoint", "note": "документы Microsoft 365"},
+    {"id": "gsuite", "title": "Google Drive", "note": "документы Google Workspace"},
+    {"id": "crm", "title": "CRM компании", "note": "сделки/контакты по вашим правам"},
+]
+
+
 @router.get("/list")
 def connectors() -> dict:
-    """Каталог коннекторов: локальные работают под правами пользователя; удалённые — planned."""
+    """Каталог коннекторов: локальные под правами ОС; удалённые — делегированный доступ."""
+    remote = [{"id": r["id"], "title": r["title"], "kind": "remote", "note": r["note"],
+               "status": "delegated"} for r in REMOTE]
     return {"connectors": [
         {"id": "local-file", "title": "Локальный файл (Office/текст)", "kind": "local",
          "note": "docx/xlsx/csv/txt/json/md под правами пользователя", "status": "ready"},
         {"id": "recent-files", "title": "Последние рабочие файлы", "kind": "local",
          "note": "недавние документы из ~/Documents и Downloads", "status": "ready"},
-        {"id": "abop-data", "title": "ABOP Data Plane (источник→canonical)", "kind": "remote",
-         "note": "коннекторы к системам компании; делегированный доступ (token-exchange)", "status": "planned"},
+        *remote,
     ]}
+
+
+@router.post("/connect")
+def connect(body: ExchangeReq) -> dict:
+    """Подключить удалённую систему через делегированный доступ (token-exchange на шлюзе)."""
+    try:
+        r = gateway.portal_post("/api/connectors/exchange", {"target": body.target, "audience": body.audience})
+    except gateway.AuthRequired:
+        return {"ok": False, "error": "auth_required"}
+    except gateway.GatewayError as e:
+        return {"ok": False, "error": str(e)}
+    return r
 
 
 def _walk(root: Path, depth: int, acc: list) -> None:

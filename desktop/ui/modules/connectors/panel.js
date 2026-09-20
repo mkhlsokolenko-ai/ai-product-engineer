@@ -10,10 +10,14 @@ export async function mount(root, ctx) {
   let cat = {}; try { cat = await api(K + "/list"); } catch {}
   const conns = (cat.connectors || []).map((c) => {
     const ready = c.status === "ready";
+    const remote = c.kind === "remote";
+    const right = ready ? `<span class="chip on">готов</span>`
+      : remote ? `<button class="cconn" data-id="${c.id}" data-title="${esc(c.title)}" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:11.5px;font-weight:600;cursor:pointer">Подключить</button>`
+      : `<span class="chip">скоро</span>`;
     return `<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
-      <span style="font-size:15px">${c.kind === "remote" ? "🗄" : "📄"}</span>
+      <span style="font-size:15px">${remote ? "🗄" : "📄"}</span>
       <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(c.title)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(c.note)}</span></span>
-      <span class="chip ${ready ? "on" : ""}">${ready ? "готов" : "скоро"}</span></div>`;
+      ${right}</div>`;
   }).join("");
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
@@ -51,6 +55,18 @@ export async function mount(root, ctx) {
       ? `<span style="color:var(--ok-ink)">✓ «${esc(r.name)}» в знаниях (${r.indexed} фр., ${r.chars} симв.)</span>`
       : `<span style="color:var(--danger-ink)">Не удалось: ${esc(r.error === "auth_required" ? "нужен вход через GitHub" : r.error)}</span>`;
   }
+
+  // делегированный доступ к удалённой системе (token-exchange от имени пользователя)
+  root.querySelectorAll(".cconn").forEach((b) => b.onclick = async () => {
+    const o = b.textContent; b.textContent = "Подключаю…"; b.disabled = true;
+    const r = await api(K + "/connect", { method: "POST", body: JSON.stringify({ target: b.dataset.id }) });
+    if (r.ok && r.delegated) { b.textContent = "✓ подключено"; b.style.color = "var(--ok-ink)"; }
+    else {
+      b.textContent = o; b.disabled = false;
+      alert(r.error === "auth_required" ? "Нужен вход через GitHub"
+        : (r.message || "Делегированный доступ к «" + b.dataset.title + "» пока не настроен в Keycloak (нужен IdP/клиент цели). Каркас token-exchange готов."));
+    }
+  });
 
   // выбор файла: Electron file input даёт .path (полный путь) — читаем под правами ОС
   $("pickFile").onclick = () => $("fileIn").click();

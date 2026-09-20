@@ -37,6 +37,24 @@ def portal_get(path: str, timeout: int = 20) -> dict:
         raise GatewayError(str(e)) from e
 
 
+def portal_post(path: str, body: dict, timeout: int = 30) -> dict:
+    """Authed POST (JSON) к portal_api под JWT пользователя."""
+    tok = auth.token()
+    if not tok:
+        raise AuthRequired("Не выполнен вход")
+    req = urllib.request.Request(config.PORTAL + path, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise GatewayError("нет права (403)") from e
+        raise GatewayError(f"portal {e.code}") from e
+    except Exception as e:  # noqa: BLE001
+        raise GatewayError(str(e)) from e
+
+
 def call(tool: str, args: dict, timeout: int = 120) -> dict:
     tok = auth.token()
     if not tok:

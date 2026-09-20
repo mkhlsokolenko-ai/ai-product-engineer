@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS attachments (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_att_thread ON attachments(thread_id);
+-- Графы агентов (GraphLens): узлы/связи в JSON. Один граф = один сценарий.
+CREATE TABLE IF NOT EXISTS graphs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    nodes TEXT NOT NULL DEFAULT '[]',   -- [{id,kind,label,x,y,agent_id?}]
+    edges TEXT NOT NULL DEFAULT '[]',   -- [[fromId,toId], ...]
+    updated_at REAL NOT NULL
+);
 -- Пользовательский каталог агентов (конструктор): методика в человекочитаемых полях.
 CREATE TABLE IF NOT EXISTS agents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

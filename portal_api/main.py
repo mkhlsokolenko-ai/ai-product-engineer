@@ -164,6 +164,50 @@ async def my_permissions(claims: dict = Depends(verify)) -> dict:
     return rbac.effective(claims)
 
 
+class ExchangeIn(BaseModel):
+    target: str          # id внешней системы/IdP (напр. "gsuite", "onedrive")
+    audience: str = ""   # клиент/аудитория токена внешней системы
+
+
+@app.post("/api/connectors/exchange")
+async def connector_exchange(body: ExchangeIn, authorization: str = Header(default=""),
+                             claims: dict = Depends(verify)) -> dict:
+    """Делегированный доступ к внешней системе от имени пользователя (RFC 8693 token-exchange).
+
+    Требует, чтобы у пользователя было право connectors:write И чтобы в Keycloak был настроен
+    IdP/клиент для target. Без настройки возвращает understandable-статус (не падение).
+    """
+    if not rbac.allowed(claims, "connectors:write"):
+        raise HTTPException(status_code=403, detail="Нет права connectors:write для этой роли")
+    subject = authorization[7:] if authorization.startswith("Bearer ") else ""
+    aud = body.audience or body.target
+    import httpx
+    data = {
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "client_id": settings.kc_audience,
+        "subject_token": subject,
+        "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "audience": aud,
+    }
+    token_url = settings.kc_issuer.rstrip("/") + "/protocol/openid-connect/token"
+    try:
+        async with httpx.AsyncClient(timeout=20) as cli:
+            r = await cli.post(token_url, data=data)
+        if r.status_code == 200:
+            return {"ok": True, "target": body.target, "delegated": True}
+        # Keycloak вернул ошибку (обычно target-клиент не настроен) — отдаём понятный статус
+        detail = ""
+        try:
+            detail = r.json().get("error_description") or r.json().get("error") or ""
+        except Exception:  # noqa: BLE001
+            detail = r.text[:160]
+        return {"ok": False, "target": body.target, "configured": False,
+                "message": f"Token-exchange к «{body.target}» не настроен в Keycloak: {detail}"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "target": body.target, "configured": False, "message": str(e)}
+
+
 class ChatStreamIn(BaseModel):
     prompt: str
     session_id: str = "desktop"
