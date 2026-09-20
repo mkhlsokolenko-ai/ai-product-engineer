@@ -238,7 +238,7 @@ export async function mount(root, ctx) {
           const line = buf.slice(0, i).split("\n").find((l) => l.startsWith("data:")); buf = buf.slice(i + 2);
           if (!line) continue; let d; try { d = JSON.parse(line.slice(5).trim()); } catch { continue; }
           if (d.delta) { if (first) { first = false; } asst.content += d.delta; if (el) { el.innerHTML = md(asst.content) + caret; $("scroll").scrollTop = $("scroll").scrollHeight; } }
-          else if (d.error) { asst.content = asst.content || ("Ошибка: " + (d.error === "auth_required" ? "нужен вход через GitHub (вверху справа)" : d.error)); if (el) el.textContent = asst.content; }
+          else if (d.error) { const msg = d.error === "auth_required" ? "нужен вход через GitHub (вверху справа)" : (d.error === "forbidden" ? "🛡 " + (d.message || "профиль недоступен вашей роли") : (d.message || d.error)); asst.content = asst.content || ("Ошибка: " + msg); if (el) el.textContent = asst.content; }
           else if (d.done && d.meta) asst.meta = d.meta;
         }
       }

@@ -8,7 +8,17 @@ const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px
 export async function mount(root, ctx) {
   const { api, gate } = ctx;
   let p = {}; try { p = await api(S + "/policy"); } catch {}
-  const badge = p.enforced ? `<span class="chip on">RBAC активен</span>` : `<span class="chip">предпросмотр · энфорс на шлюзе</span>`;
+  let me = {}; try { me = await api(S + "/me"); } catch {}
+  const enforced = me.ok && me.enforced;
+  const badge = enforced
+    ? `<span class="chip on">RBAC активен · энфорс на шлюзе</span>`
+    : `<span class="chip">${me.error === "auth_required" ? "войдите — покажу вашу роль" : "предпросмотр"}</span>`;
+  const meBar = me.ok ? `<div style="${CARD};padding:14px 16px;gap:8px">
+      <span style="${LBL}">ваш доступ (из JWT Keycloak)</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">роли</span>${(me.roles || []).map((r) => `<span class="chip on">${esc(r)}</span>`).join("")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">можно</span>${(me.allowed || []).map((x) => `<span class="chip on">${esc(x)}</span>`).join("")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">нельзя</span>${(me.denied || []).map((x) => `<span class="chip" style="color:var(--danger-ink)">${esc(x)}</span>`).join("") || `<span style="font-size:12px;color:var(--ink-3)">—</span>`}</div>
+    </div>` : "";
 
   const roleCard = (r) => `<div style="${CARD};padding:16px;gap:10px">
     <div style="display:flex;align-items:center;gap:8px"><b style="flex:1;font-size:14px">${esc(r.role)}</b>
@@ -26,6 +36,7 @@ export async function mount(root, ctx) {
         </div>${badge}
         <button id="gateDemo" style="padding:10px 16px;border:1px solid var(--line-2);border-radius:10px;background:var(--panel);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer">Демо approve/deny</button>
       </div>
+      ${meBar}
       <span style="${LBL}">политика доступа · роль → разрешено / запрещено</span>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${(p.roles || []).map(roleCard).join("")}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
