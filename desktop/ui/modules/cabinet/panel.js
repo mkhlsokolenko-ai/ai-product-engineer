@@ -12,10 +12,12 @@ const ROLE_CAPS = {
   lecturer: ["Полный доступ ко всем вкладкам", "Правка политики RBAC и аудит", "Управление арендаторами"],
   admin: ["Полный доступ", "Управление доступом и биллингом"],
 };
+// 1:1 из эталона APE Desktop: глиф · заголовок · подпись · подключён(on).
 const SOURCES = [
-  ["📄", "Локальные файлы Office (Word/Excel)", "контекст текущего документа", "Подключить"],
-  ["🕔", "Последние рабочие файлы", "недавние документы ОС", "Подключить"],
-  ["🗄", "ABOP Data Plane (источник→canonical)", "коннекторы к системам компании", "Настроить"],
+  ["▦", "Office 365", "Word, Excel, Outlook — надстройка активна", true],
+  ["⛁", "1С: учёт", "чтение справочников и документов", true],
+  ["◵", "Хранилище отчётов", "подключение по правам пользователя", false],
+  ["⎘", "Последние файлы", "12 документов за неделю", true],
 ];
 const SHORTCUTS = [["Ctrl K", "командная палитра"], ["Ctrl N", "новый тред"], ["Enter", "отправить"], ["Esc", "стоп / закрыть шторку"]];
 
@@ -41,10 +43,10 @@ export async function mount(root, ctx) {
   const capsOf = (r) => (ROLE_CAPS[r] || []).map((t) => { const no = t.startsWith("✗"); return `<span style="display:flex;align-items:flex-start;gap:9px;font-size:12.5px;line-height:1.5;color:var(--ink-2)"><span style="color:${no ? "var(--danger-ink)" : "var(--ok-ink)"};font-weight:700">${no ? "✗" : "✓"}</span>${esc(t.replace(/^✗\s*/, ""))}</span>`; }).join("");
   const primaryRole = myRoles.find((r) => ROLE_CAPS[r]) || "manager";
 
-  const sources = SOURCES.map((s) => `<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+  const sources = SOURCES.map((s) => { const on = s[3]; return `<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
     <span style="font-size:15px">${s[0]}</span>
     <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(s[1])}</span><span style="font-size:11px;color:var(--ink-3)">${esc(s[2])}</span></span>
-    <button disabled title="скоро" style="padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink-3);font-size:11.5px;font-weight:600">${esc(s[3])}</button></div>`).join("");
+    <span class="chip ${on ? "on" : ""}">${on ? "подключён" : "подключить"}</span></div>`; }).join("");
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:22px;animation:ape-in .35s ease-out">
