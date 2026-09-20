@@ -48,7 +48,8 @@ let active = null;
 
 function icon(name) {
   // минимальные глиф-иконки рейла (без внешних зависимостей)
-  return { chat: "💬", agents: "🤖", graphlens: "🕸", opslens: "🗺", connectors: "🔌", security: "🛡", cabinet: "👤", ocr: "🔎", ml: "🧠", abop: "🕸" }[name] || "▦";
+  // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
+  return { chat: "✦", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", ml: "❖", abop: "⬡" }[name] || "◆";
 }
 
 async function renderAuth() {
@@ -91,9 +92,13 @@ function railBtn(glyph, label, on) {
   return `<span style="font-size:16px;line-height:1">${glyph}</span><span style="font-size:10px;font-weight:600">${label}</span>`
     .replace(/^/, `<button data-rb style="width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">`) + `</button>`;
 }
+// Рейл эталона APE Desktop = 3 раздела: Чат / Агент / Кабинет. Остальное — через палитру (Ctrl+K).
+const RAIL = ["chat", "agents", "cabinet"];
+const RAIL_TITLE = { agents: "Агент" };
+function railModules() { return RAIL.map((id) => MODULES.find((m) => m.id === id)).filter((m) => m && canSee(m.id)); }
 function renderNav() {
-  $("railNav").innerHTML = visibleModules().map((m) =>
-    railBtn(icon(m.icon), m.title, m.id === active).replace("data-rb", `data-id="${m.id}"`)).join("");
+  $("railNav").innerHTML = railModules().map((m) =>
+    railBtn(icon(m.icon), RAIL_TITLE[m.id] || m.title, m.id === active).replace("data-rb", `data-id="${m.id}"`)).join("");
   $("railNav").querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
 }
 
