@@ -22,6 +22,21 @@ class AuthRequired(GatewayError):
     pass
 
 
+def portal_get(path: str, timeout: int = 20) -> dict:
+    """Authed GET к portal_api (REST), под JWT пользователя. Для RBAC/permissions и пр."""
+    tok = auth.token()
+    if not tok:
+        raise AuthRequired("Не выполнен вход")
+    req = urllib.request.Request(config.PORTAL + path, headers={"Authorization": "Bearer " + tok})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        raise GatewayError(f"portal {e.code}") from e
+    except Exception as e:  # noqa: BLE001
+        raise GatewayError(str(e)) from e
+
+
 def call(tool: str, args: dict, timeout: int = 120) -> dict:
     tok = auth.token()
     if not tok:

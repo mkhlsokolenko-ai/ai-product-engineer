@@ -6,8 +6,21 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ... import gateway
+
 MANIFEST = {"id": "security", "title": "Безопасность", "icon": "security", "ui": "security", "order": 80}
 router = APIRouter()
+
+
+@router.get("/me")
+def me() -> dict:
+    """Реальные права текущего пользователя со шлюза (RBAC по ролям Keycloak)."""
+    try:
+        return {"ok": True, **gateway.portal_get("/api/my/permissions")}
+    except gateway.AuthRequired:
+        return {"ok": False, "error": "auth_required"}
+    except gateway.GatewayError as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/policy")

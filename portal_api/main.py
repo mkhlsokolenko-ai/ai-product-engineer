@@ -22,7 +22,7 @@ from minio import Minio
 from pydantic import BaseModel
 
 from portal_api import store
-from server import clients, db
+from server import clients, db, rbac
 from server.config import settings
 from server.pricing import cost_rub
 
@@ -158,6 +158,12 @@ async def my_usage(session_id: str = "", claims: dict = Depends(verify)) -> dict
     return await db.student_report(claims["sub"], session_id or None)
 
 
+@app.get("/api/my/permissions")
+async def my_permissions(claims: dict = Depends(verify)) -> dict:
+    """Реальные права текущего пользователя из его JWT (роли Keycloak). Энфорс — на сервере."""
+    return rbac.effective(claims)
+
+
 class ChatStreamIn(BaseModel):
     prompt: str
     session_id: str = "desktop"
@@ -181,6 +187,10 @@ async def chat_stream_ep(body: ChatStreamIn, claims: dict = Depends(verify)) -> 
     username = claims.get("preferred_username", "") or ""
 
     async def gen():
+        # RBAC-энфорс: профиль ответа разрешён роли пользователя?
+        if not rbac.allowed(claims, "profile:" + body.profile):
+            yield _sse({"error": "forbidden", "message": f"Профиль «{body.profile}» недоступен вашей роли."})
+            return
         try:
             await db.check_quota(student_id, body.session_id)
         except db.QuotaExceeded as e:
