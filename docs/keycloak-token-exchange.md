@@ -43,6 +43,17 @@ curl -s -X POST https://engineer-ai.pro/api/connectors/exchange \
 ```
 В десктопе: 🔌 Источники → OneDrive/Google Drive/CRM → «Подключить» → «✓ подключено».
 
+## СДЕЛАНО (2026-09-22)
+- Фичи включены: `--features=token-exchange,admin-fine-grained-authz` (compose), KC рестартнут, вход жив.
+- В realm созданы **клиенты-цели** `conn-onedrive` / `conn-gsuite` / `conn-crm` (confidential, service accounts on),
+  на каждом включены management-permissions.
+- Создан **инициатор** `ape-exchange` (confidential, secret) — серверный клиент для обмена.
+- Policy `allow-course-mcp-exchange` (client-policy: ape-exchange + course-mcp) привязана к
+  `token-exchange.permission.client.<conn-*>` каждого целевого клиента.
+- portal_api читает `KC_EXCHANGE_CLIENT=ape-exchange` / `KC_EXCHANGE_SECRET` из `.env` (secret НЕ в git).
+- **Проверено end-to-end:** client_credentials(ape-exchange) → token-exchange → `conn-onedrive` возвращает токен. ✓
+- Осталось для реального доступа к API: у `conn-*` настроить брокеринг к OAuth вендора (client_id/secret Microsoft/Google).
+
 ## Границы / что дальше
 - **Стандартный exchange** (обмен курсового JWT на токен client-получателя) — работает после шагов 1–2.
 - **Реальный доступ к API внешней системы** (чтение файлов OneDrive/Google) — требует шага 3 (брокеринг

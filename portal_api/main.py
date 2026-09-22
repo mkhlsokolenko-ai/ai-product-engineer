@@ -180,11 +180,18 @@ async def connector_exchange(body: ExchangeIn, authorization: str = Header(defau
     if not rbac.allowed(claims, "connectors:write"):
         raise HTTPException(status_code=403, detail="Нет права connectors:write для этой роли")
     subject = authorization[7:] if authorization.startswith("Bearer ") else ""
-    aud = body.audience or body.target
+    aud = body.audience or ("conn-" + body.target)
+    import os
     import httpx
+    ex_client = os.getenv("KC_EXCHANGE_CLIENT", "ape-exchange")
+    ex_secret = os.getenv("KC_EXCHANGE_SECRET", "")
+    if not ex_secret:
+        return {"ok": False, "target": body.target, "configured": False,
+                "message": "KC_EXCHANGE_SECRET не задан на сервере (клиент-инициатор ape-exchange)."}
     data = {
         "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "client_id": settings.kc_audience,
+        "client_id": ex_client,
+        "client_secret": ex_secret,
         "subject_token": subject,
         "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
         "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
