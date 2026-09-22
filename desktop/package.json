@@ -1,6 +1,6 @@
 {
   "name": "ape-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "APE Desktop — модульная оболочка курса (Electron + Python sidecar)",
   "main": "electron/main.js",
   "scripts": {
