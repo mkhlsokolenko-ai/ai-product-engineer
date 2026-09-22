@@ -376,8 +376,13 @@ const SKILLS={
 };
 let _lecOpen=null,_lecMap={};
 async function vLectures(){
+  // Менеджеру (роль manager без staff) — только менеджерский трек, без переключателя.
+  const staffTop=ROLES.includes("lecturer")||ROLES.includes("admin");
+  const managerOnly=ROLES.includes("manager")&&!staffTop;
+  if(managerOnly)_track="managers";
   const seg=(t,lab)=>`<button onclick="setTrack('${t}')" style="border:1px solid var(--b1);background:${_track===t?'var(--accent-bg)':'transparent'};color:${_track===t?'var(--accent)':'var(--ink2)'};font-weight:600;font-size:12.5px;padding:6px 12px;border-radius:8px;cursor:pointer">${lab}</button>`;
-  view(`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px"><h2 style="margin:0;flex:1">Курс</h2><div style="display:flex;gap:6px">${seg('engineer','Инженерный')}${seg('managers','Для менеджеров')}</div></div><div id="lc">${skView(4)}</div>`);
+  const switcher=managerOnly?'':`<div style="display:flex;gap:6px">${seg('engineer','Инженерный')}${seg('managers','Для менеджеров')}</div>`;
+  view(`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px"><h2 style="margin:0;flex:1">Курс</h2>${switcher}</div><div id="lc">${skView(4)}</div>`);
   const qs="?track="+encodeURIComponent(_track);
   const [ls,as,d]=await Promise.all([api("/api/lectures"+qs).catch(()=>[]),api("/api/assignments"+qs).catch(()=>[]),api("/api/dashboard").catch(()=>({}))]);
   const staff=ROLES.includes("lecturer")||ROLES.includes("admin");

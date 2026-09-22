@@ -410,8 +410,19 @@ async def delete_file(filename: str, claims: dict = Depends(verify)) -> dict:
 
 # ─────────────────────────── Лекции / Домашки / Оценки ───────────────────────────
 
+def _forced_track(claims: dict, requested: str) -> str:
+    """RBAC-видимость курсов: менеджеру — только managers; staff — что просил; иначе — запрошенный."""
+    roles = set(claims.get("realm_access", {}).get("roles", []))
+    if {"lecturer", "admin"} & roles:
+        return requested
+    if "manager" in roles:
+        return "managers"
+    return requested
+
+
 @app.get("/api/lectures")
 async def lectures(track: str = "engineer", claims: dict = Depends(verify)) -> list[dict]:
+    track = _forced_track(claims, track)
     _, start = _course_week()
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
@@ -550,6 +561,7 @@ async def lecture_delete(code: str, claims: dict = Depends(require_staff)) -> di
 
 @app.get("/api/assignments")
 async def assignments(track: str = "engineer", claims: dict = Depends(verify)) -> list[dict]:
+    track = _forced_track(claims, track)
     async with db._conn() as c:  # noqa: SLF001
         cur = await c.execute(
             "SELECT id,week,title,description,fmt,max_score FROM assignments WHERE track=%s "
