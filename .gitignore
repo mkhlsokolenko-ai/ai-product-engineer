@@ -36,3 +36,6 @@ outputs/
 
 # Office temp locks
 ~$*
+
+# SOCKS-туннель для почты (приватный ключ доступа к боксу — только на сервере)
+deploy/mail-tunnel/qkey

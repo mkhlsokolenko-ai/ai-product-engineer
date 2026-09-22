@@ -22,7 +22,7 @@ from minio import Minio
 from pydantic import BaseModel
 
 from portal_api import store
-from server import clients, db, rbac
+from server import clients, db, kc_admin, mailer, rbac
 from server.config import settings
 from server.pricing import cost_rub
 
@@ -146,6 +146,11 @@ def require_staff(claims: dict = Depends(verify)) -> dict:
 async def _startup() -> None:
     await db.init_pool()
     await store.ensure()
+    async with db._conn() as c:  # noqa: SLF001 — таблица кодов email-входа
+        await c.execute(
+            "CREATE TABLE IF NOT EXISTS email_codes ("
+            " email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires TIMESTAMPTZ NOT NULL,"
+            " attempts INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now())")
 
 
 @app.get("/api/health")
@@ -1098,3 +1103,104 @@ async def detach_lecture_material(mid: int, claims: dict = Depends(require_staff
             await c.execute("UPDATE lectures SET materials_url=%s WHERE week=%s AND materials_url=%s",
                             (nxt[0] if nxt else "", wk, url))
     return {"ok": True}
+
+
+# ── Email-код входа для менеджеров ────────────────────────────────────────
+# Поток: request (шлём 6-значный код на почту) → verify (сверяем → Keycloak
+# impersonation → реальный JWT realm'а). Транспорт письма — UniOne (см. mailer),
+# импersonation — ape-exchange (см. kc_admin). SMTP на Timeweb заблокирован.
+
+import hashlib
+import hmac
+import re
+import secrets as _secrets
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _code_hash(email: str, code: str) -> str:
+    """HMAC(pepper=kc_exchange_secret) от email:code — чтобы в БД не лежал открытый код."""
+    pepper = (settings.kc_exchange_secret or "ape-otp").encode()
+    return hmac.new(pepper, f"{email.lower()}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+class EmailRequestIn(BaseModel):
+    email: str
+
+
+class EmailVerifyIn(BaseModel):
+    email: str
+    code: str
+
+
+@app.post("/api/auth/email/request")
+async def auth_email_request(body: EmailRequestIn) -> dict:
+    """Отправить одноразовый код входа на почту. Код нигде не возвращается клиенту."""
+    email = body.email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Некорректный email")
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT EXTRACT(EPOCH FROM (now()-created_at)) FROM email_codes WHERE email=%s",
+            (email,))).fetchone()
+        if row and row[0] is not None and float(row[0]) < settings.otp_resend_seconds:
+            wait = int(settings.otp_resend_seconds - float(row[0]))
+            raise HTTPException(status_code=429, detail=f"Код уже отправлен. Повтор через {wait} с.")
+        code = f"{_secrets.randbelow(1_000_000):06d}"
+        await c.execute(
+            "INSERT INTO email_codes (email, code_hash, expires, attempts, created_at) "
+            "VALUES (%s,%s, now() + (%s || ' seconds')::interval, 0, now()) "
+            "ON CONFLICT (email) DO UPDATE SET code_hash=EXCLUDED.code_hash, "
+            "expires=EXCLUDED.expires, attempts=0, created_at=now()",
+            (email, _code_hash(email, code), str(settings.otp_ttl_seconds)))
+    try:
+        res = mailer.send_login_code(email, code, ttl_min=settings.otp_ttl_seconds // 60)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Не удалось отправить письмо: {e}") from e
+    if res.get("dev"):
+        # почта не настроена — код в лог сервера (для локальной отладки), не клиенту
+        print(f"[OTP dev] {email} -> {code}")
+    return {"ok": True, "resend_in": settings.otp_resend_seconds,
+            "sent": bool(res.get("sent")), "dev": bool(res.get("dev"))}
+
+
+@app.post("/api/auth/email/verify")
+async def auth_email_verify(body: EmailVerifyIn) -> dict:
+    """Проверить код → выдать реальный JWT Keycloak (роль manager) через импersonation."""
+    email = body.email.strip().lower()
+    code = re.sub(r"\D", "", body.code or "")
+    if not _EMAIL_RE.match(email) or len(code) != 6:
+        raise HTTPException(status_code=400, detail="Некорректный email или код")
+    async with db._conn() as c:  # noqa: SLF001
+        row = await (await c.execute(
+            "SELECT code_hash, expires < now(), attempts FROM email_codes WHERE email=%s",
+            (email,))).fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="Код не запрашивался или истёк")
+        stored, expired, attempts = row
+        if expired:
+            await c.execute("DELETE FROM email_codes WHERE email=%s", (email,))
+            raise HTTPException(status_code=400, detail="Код истёк — запросите новый")
+        if attempts >= settings.otp_max_attempts:
+            await c.execute("DELETE FROM email_codes WHERE email=%s", (email,))
+            raise HTTPException(status_code=429, detail="Слишком много попыток — запросите новый код")
+        if not hmac.compare_digest(stored, _code_hash(email, code)):
+            await c.execute("UPDATE email_codes SET attempts=attempts+1 WHERE email=%s", (email,))
+            left = settings.otp_max_attempts - attempts - 1
+            raise HTTPException(status_code=401, detail=f"Неверный код. Осталось попыток: {max(left,0)}")
+        await c.execute("DELETE FROM email_codes WHERE email=%s", (email,))
+    # код верный → пользователь-менеджер в Keycloak + импersonation-токен
+    if not settings.kc_exchange_secret:
+        raise HTTPException(status_code=500, detail="Импersonation не настроен (KC_EXCHANGE_SECRET)")
+    try:
+        uid = await kc_admin.ensure_user(email, settings.manager_role)
+        tok = await kc_admin.impersonate(uid)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Не удалось выдать токен: {e}") from e
+    return {
+        "ok": True,
+        "access_token": tok.get("access_token"),
+        "refresh_token": tok.get("refresh_token"),
+        "expires_in": tok.get("expires_in"),
+        "token_type": tok.get("token_type", "Bearer"),
+    }

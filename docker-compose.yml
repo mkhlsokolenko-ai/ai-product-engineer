@@ -52,6 +52,16 @@ services:
     volumes:
       - minio_data:/data
 
+  # SOCKS-выход через не-RU бокс: us1.unione.io геоблокирует RU-IP, письма идут
+  # через этот туннель (portal-api → UNIONE_PROXY=socks5h://mail-tunnel:1080).
+  # Бокс/порт — из .env (BOX_SSH_HOST/BOX_SSH_PORT), ключ — ./deploy/mail-tunnel/qkey.
+  mail-tunnel:
+    image: alpine:3.20
+    restart: unless-stopped
+    command: ["sh","-c","apk add --no-cache openssh-client >/dev/null 2>&1; cp /qkey /tmp/k && chmod 600 /tmp/k; while true; do ssh -N -D 0.0.0.0:1080 -p ${BOX_SSH_PORT:-36118} -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i /tmp/k root@${BOX_SSH_HOST:-ssh6.vast.ai}; echo reconnect; sleep 3; done"]
+    volumes:
+      - ./deploy/mail-tunnel/qkey:/qkey:ro
+
   portal-api:
     build: .
     restart: unless-stopped
@@ -60,6 +70,7 @@ services:
     depends_on:
       - postgres
       - minio
+      - mail-tunnel
 
   caddy:
     image: caddy:2-alpine

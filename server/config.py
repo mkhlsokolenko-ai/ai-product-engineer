@@ -101,6 +101,24 @@ class Settings:
     course_weeks: int = int(os.getenv("COURSE_WEEKS", "15"))
     langfuse_url: str = os.getenv("LANGFUSE_URL", "")
 
+    # Транзакционная почта (UniOne HTTP-API — SMTP на Timeweb заблокирован).
+    # us1 геоблокирует RU-IP -> unione_proxy=socks5h://... через не-RU бокс.
+    unione_api_key: str = os.getenv("UNIONE_API_KEY", "")
+    unione_api_url: str = os.getenv("UNIONE_API_URL", "https://us1.unione.io")
+    unione_proxy: str = os.getenv("UNIONE_PROXY", "")  # напр. socks5h://mail-tunnel:1080
+    mail_from: str = os.getenv("MAIL_FROM", "noreply@red-team.tech")  # до верификации engineer-ai.pro
+    mail_from_name: str = os.getenv("MAIL_FROM_NAME", "AI Product Engineer")
+
+    # Email-код входа (менеджеры): TTL и параметры импersonation через Keycloak.
+    otp_ttl_seconds: int = int(os.getenv("OTP_TTL_SECONDS", "600"))         # код живёт 10 мин
+    otp_resend_seconds: int = int(os.getenv("OTP_RESEND_SECONDS", "60"))    # не чаще раза в минуту
+    otp_max_attempts: int = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))         # попыток ввода
+    kc_realm: str = os.getenv("KEYCLOAK_REALM", "ai-product-engineer")
+    kc_exchange_client: str = os.getenv("KC_EXCHANGE_CLIENT", "ape-exchange")
+    kc_exchange_secret: str = os.getenv("KC_EXCHANGE_SECRET", "")
+    kc_admin_internal: str = os.getenv("KEYCLOAK_ADMIN_INTERNAL", "http://keycloak:8080")
+    manager_role: str = os.getenv("MANAGER_ROLE", "manager")
+
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
     def collection(self, name: str) -> str:
