@@ -54,6 +54,19 @@ curl -s -X POST https://engineer-ai.pro/api/connectors/exchange \
 - **Проверено end-to-end:** client_credentials(ape-exchange) → token-exchange → `conn-onedrive` возвращает токен. ✓
 - Осталось для реального доступа к API: у `conn-*` настроить брокеринг к OAuth вендора (client_id/secret Microsoft/Google).
 
+## Impersonation для email-кода входа менеджеров (2026-09-22)
+Тот же клиент `ape-exchange` выдаёт **реальный JWT realm'а от имени пользователя** (RFC 8693
+token-exchange с `requested_subject`) — под email-код вход менеджеров (`portal_api` → `server/kc_admin.py`).
+Настроено:
+- Сервис-аккаунту `ape-exchange` выданы realm-management роли: `manage-users`, `view-users`,
+  `view-realm` (нужна для GET realm-роли!), `query-users`, **`impersonation`**.
+- Realm-роль `manager` создана; `ensure_user` создаёт/находит юзера по email + вешает `manager`.
+- **Включены management-permissions на клиенте `course-mcp`** (audience impersonation-токена) и к его
+  `token-exchange.permission.client.<course-mcp-id>` привязана та же policy `allow-course-mcp-exchange`.
+  Без этого — `403 "Client not allowed to exchange"`. Без `view-realm` — `403` на чтении роли.
+- **Проверено:** ensure_user+impersonate → JWT с `aud=[account,course-mcp]`, `roles=[…,manager]`. ✓
+- Транспорт письма — UniOne HTTP-API через SOCKS (`mail-tunnel`); см. память `email-transport-timeweb`.
+
 ## Границы / что дальше
 - **Стандартный exchange** (обмен курсового JWT на токен client-получателя) — работает после шагов 1–2.
 - **Реальный доступ к API внешней системы** (чтение файлов OneDrive/Google) — требует шага 3 (брокеринг
