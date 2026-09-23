@@ -69,10 +69,14 @@ def send(to: str, subject: str, html: str, reply_to: str | None = None) -> dict:
     # us1 геоблокирует RU-IP → при заданном unione_proxy идём через SOCKS сквозь не-RU бокс
     with httpx.Client(timeout=20, proxy=settings.unione_proxy or None) as c:
         r = c.post(url, json={"message": msg}, headers=headers)
-    r.raise_for_status()
-    data = r.json()
-    if data.get("status") != "success":
-        raise RuntimeError(f"UniOne error: {data}")
+    try:
+        data = r.json()
+    except Exception:  # noqa: BLE001
+        data = {}
+    # UniOne кладёт реальную причину в message/code — не теряем её за generic «400»
+    if r.status_code != 200 or data.get("status") != "success":
+        reason = data.get("message") or r.text[:200] or f"HTTP {r.status_code}"
+        raise RuntimeError(reason)
     return {"sent": True}
 
 
