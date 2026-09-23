@@ -135,7 +135,7 @@ main{padding:18px 14px 60px}
     <div style="display:flex;align-items:center;gap:12px;color:var(--ink3);font-size:12px;margin:16px 0"><span style="flex:1;height:1px;background:var(--b1)"></span>для менеджеров<span style="flex:1;height:1px;background:var(--b1)"></span></div>
     <div id="emStep1">
       <input id="emEmail" type="email" inputmode="email" autocomplete="email" placeholder="Рабочая почта"
-        style="width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--b1);border-radius:10px;background:var(--bg2);color:var(--ink1);font-size:14px">
+        style="width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--b1);border-radius:10px;background:var(--bg2);color:var(--ink1);font-size:14px;text-align:center">
       <button class="btn" style="width:100%;margin-top:8px" id="emBtnSend">Получить код на почту</button>
     </div>
     <div id="emStep2" class="hidden">
@@ -143,6 +143,7 @@ main{padding:18px 14px 60px}
       <input id="emCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"
         style="width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid var(--b1);border-radius:10px;background:var(--bg2);color:var(--ink1);font-size:20px;letter-spacing:8px;text-align:center;font-family:var(--mono)">
       <button class="btn primary" style="width:100%;margin-top:8px" id="emBtnVerify">Войти</button>
+      <button class="btn" style="width:100%;margin-top:6px" id="emBtnResend" disabled>Отправить код повторно</button>
       <button class="btn" style="width:100%;margin-top:6px" id="emBtnBack">Изменить почту</button>
     </div>
     <p id="emMsg" style="color:var(--crit);font-size:12px;text-align:center;margin:8px 0 0;min-height:16px"></p>
@@ -792,15 +793,25 @@ $("btnLogin").onclick=()=>login();
 let _emResendT=0;
 function emMsg(t,ok){const e=$("emMsg");e.textContent=t||"";e.style.color=ok?"var(--ok,#16a34a)":"var(--crit)";}
 async function emPost(path,body){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});let d={};try{d=await r.json();}catch{}if(!r.ok)throw new Error(d.detail||("HTTP "+r.status));return d;}
+function emStartResend(sec){clearInterval(_emResendT);const b=$("emBtnResend");let n=sec||60;
+  b.disabled=true;b.textContent=`Отправить код повторно (${n})`;
+  _emResendT=setInterval(()=>{n--;if(n<=0){clearInterval(_emResendT);b.disabled=false;b.textContent="Отправить код повторно";}else{b.textContent=`Отправить код повторно (${n})`;}},1000);}
+async function emSend(email,resend){const d=await emPost("/api/auth/email/request",{email});emStartResend(d.resend_in||60);return d;}
 $("emBtnSend").onclick=async()=>{
   const email=$("emEmail").value.trim();if(!email){emMsg("Введите почту");return;}
   const b=$("emBtnSend");b.disabled=true;emMsg("Отправляем код…",true);
-  try{await emPost("/api/auth/email/request",{email});
+  try{await emSend(email);
     $("emTo").textContent=email;$("emStep1").classList.add("hidden");$("emStep2").classList.remove("hidden");
     emMsg("Код отправлен — проверьте почту",true);$("emCode").focus();
   }catch(e){emMsg(e.message);}finally{b.disabled=false;}
 };
-$("emBtnBack").onclick=()=>{$("emStep2").classList.add("hidden");$("emStep1").classList.remove("hidden");$("emCode").value="";emMsg("");};
+$("emBtnResend").onclick=async()=>{
+  const email=$("emTo").textContent;if(!email)return;
+  emMsg("Отправляем код повторно…",true);
+  try{await emSend(email);emMsg("Новый код отправлен",true);$("emCode").value="";$("emCode").focus();}
+  catch(e){emMsg(e.message);}
+};
+$("emBtnBack").onclick=()=>{clearInterval(_emResendT);$("emStep2").classList.add("hidden");$("emStep1").classList.remove("hidden");$("emCode").value="";emMsg("");};
 $("emBtnVerify").onclick=async()=>{
   const email=$("emTo").textContent,code=$("emCode").value.replace(/\D/g,"");
   if(code.length!==6){emMsg("Введите 6 цифр");return;}
